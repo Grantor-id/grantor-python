@@ -8,6 +8,54 @@ release; they decouple at `1.0.0`.
 
 ## Unreleased
 
+### Fixed — what two real consumers found
+
+Every one of these was invisible from inside the library and obvious from
+inside a project using it.
+
+- **A soft-deleted account could sign in.** `find_by_subject` filters across
+  a relation, and a related-field join reads the related table directly —
+  the related model's manager never runs. A `Profile` manager excluding
+  soft-deleted rows was bypassed, so a deleted profile authenticated, and
+  with a conditional unique index on live rows the same `sub` could be
+  linked to a second live account while the deleted one went on signing in.
+  Two accounts, one subject. `GRANTOR_USER_QUERYSET` names the queryset a
+  project considers real.
+- **A withdrawn signing key never stopped being accepted.** The JWKS cache
+  had no expiry at all: rotation *in* was handled, rotation *out* was not,
+  so revoking a compromised key meant restarting every consumer. Worse,
+  `GRANTOR_JWKS_CACHE_SECONDS` had survived into bounding only the
+  discovery document — a setting quietly no longer meaning what its name
+  said. It now bounds the key set, which is what it always claimed.
+- **An open redirect on the admin sign-in.** `?next=` went unvalidated into
+  the transaction and was followed *after* a successful sign-in — the
+  moment somebody is most likely to trust what they see, on the most
+  privileged surface there is. The session views' own guard now covers it.
+- **`/sso/logout` ignored `GRANTOR_ENABLED`.** A dark deploy published a
+  live sign-out that reached the real issuer. All three routes answer 404
+  now, and the test asserts the issuer is never contacted rather than that
+  a guard is called.
+- **`last_login` stopped moving** for any project supplying
+  `GRANTOR_ESTABLISH_SESSION`, because `login()` is what fires
+  `user_logged_in`.
+- **Account linking left no timestamp.** `update_fields` makes Django skip
+  `auto_now` columns, so the row that had just acquired an identity was the
+  one row with no record of when.
+- **The ID-token cookie was written even when the project manages its own.**
+  Both writes used one name and disagreed about lifetime, so ordering
+  decided which won. Ordering is not a contract.
+
+### Added
+
+- `GRANTOR_COOKIE_SAMESITE`. `Lax` remains the default and is what the
+  callback needs, but this library supports a front end on another origin,
+  and that is the shape that needs `None; Secure`.
+- `grantor_django.urls.sign_in_urls` — `start` and `callback` only, for a
+  project whose sign-out is its own, **carrying its own `app_name`**. The
+  namespace is load-bearing and a consumer assembling their own subset gets
+  a silently wrong redirect URI; an export nobody can get wrong beats a
+  warning in the documentation.
+
 ### `grantor-django[admin]`
 
 A Django admin with no local password at all.

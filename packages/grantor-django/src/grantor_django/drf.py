@@ -209,6 +209,10 @@ class GrantorJWTAuthentication(authentication.BaseAuthentication):
                 ),
                 audience=audience(),
                 client=http,
+                # The name always said JWKS. Until now it bounded only the
+                # discovery document, so a consumer's key-cache setting was
+                # not bounding keys.
+                jwks_ttl=conf.get("GRANTOR_JWKS_CACHE_SECONDS"),
             )
         except TokenError as exc:
             # The reason names the check that failed and never any part of
