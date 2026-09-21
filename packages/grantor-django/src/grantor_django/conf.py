@@ -64,6 +64,16 @@ _DEFAULTS: dict[str, Any] = {
     "GRANTOR_ID_TOKEN_COOKIE_NAME": "grantor_id_token",
     "GRANTOR_COOKIE_SECURE": None,  # None → the opposite of DEBUG
     "GRANTOR_TIMEOUT": 15.0,
+    # How long a discovery document and its JWKS are reused. The name is
+    # the one the consumers already use, so adopting this library is a code
+    # change and not a configuration migration.
+    "GRANTOR_JWKS_CACHE_SECONDS": 3600,
+    # A dotted path to a zero-argument callable returning an `httpx.Client`,
+    # for a project that must reach the issuer through a proxy, present a
+    # client certificate, or trust a private CA. One seam, used by every
+    # request this package makes — the sign-in flow and the resource server
+    # alike — so those cannot end up configured differently.
+    "GRANTOR_HTTP_CLIENT_FACTORY": None,
 }
 
 
@@ -109,6 +119,16 @@ def subject_field() -> tuple[str | None, str]:
         related, _, field = raw.rpartition(".")
         return related, field
     return None, raw
+
+
+def http_client() -> Any:
+    """The project's own ``httpx.Client``, or ``None`` for a fresh one each time."""
+    path = get("GRANTOR_HTTP_CLIENT_FACTORY")
+    if not path:
+        return None
+    from django.utils.module_loading import import_string
+
+    return import_string(path)()
 
 
 def cookie_secure() -> bool:
