@@ -185,9 +185,26 @@ class GrantorAdminSite(AdminSite):
 
         Turning it on requires two deliberate acts, not one: setting
         ``GRANTOR_ADMIN_BREAK_GLASS = True`` **and** giving somebody a usable
-        password, which no normal path in this library ever does
-        (``manage.py grantor_break_glass`` is the supported way, and it says
-        the same things this docstring does).
+        password *and* ``is_staff``, which no normal path in this library
+        ever does (``manage.py grantor_break_glass`` is the supported way,
+        and it says the same things this docstring does).
+
+        ``GRANTOR_ADMIN_BREAK_GLASS`` is a **Django setting, not an
+        environment variable**. A project that keeps configuration in the
+        environment has to read it across itself::
+
+            GRANTOR_ADMIN_BREAK_GLASS = env.bool(
+                "GRANTOR_ADMIN_BREAK_GLASS", default=False
+            )
+
+        Setting the variable alone changes nothing this library can see. A
+        consumer set it, force-deployed, and the admin went on redirecting
+        to the issuer — which reads as the break-glass being broken rather
+        than as never having been switched on.
+
+        And it needs ``ModelBackend`` in ``AUTHENTICATION_BACKENDS``. A
+        project following this module's own advice does not install it, and
+        then no password authenticates at all.
 
         Afterwards, in the audit trail at the issuer, check:
 
@@ -195,9 +212,17 @@ class GrantorAdminSite(AdminSite):
           **not** appear there, so anything that does was a normal sign-in
           and anything that happened without one was not;
         * the local ``last_login`` of the account you gave a password to;
-        * that the password was removed and the setting turned back off,
-          which is the step people forget because by then it is working
-          again.
+        * that the password was removed **and ``is_staff`` revoked** and the
+          setting turned back off — the step people forget, because by then
+          it is working again. A close that leaves a staff row behind leaves
+          a standing admin account on a surface whose whole argument is that
+          none exists.
+
+        Note what this path does **not** do: it does not consult the issuer
+        at all, so the Grantor role check is bypassed rather than merely
+        deferred. That is the point — the role check is what is broken when
+        you need this — and it is the reason the window is closed rather
+        than left open because it is working.
         """
         logger.error(
             "grantor admin: BREAK GLASS is enabled — the admin is accepting local "

@@ -168,12 +168,30 @@ def test_a_half_finished_rollout_still_hears_about_a_malformed_value(settings):
     assert any("https" in e.msg for e in _grantor_errors())
 
 
-def test_the_sign_in_routes_are_absent_while_it_is_off(client, settings):
-    """404, not 500 — a route that is not enabled does not exist yet."""
+def test_every_route_is_absent_while_it_is_off(client, settings):
+    """404, not 500 — a route that is not enabled does not exist yet.
+
+    **All three**, sign-out included. It is the one of them that can do
+    something irreversible: a live `/sso/logout` under a flag that is
+    supposed to be off reaches the real issuer and ends a real session.
+    A switch that two of three routes honour is not a switch.
+    """
     settings.GRANTOR_ENABLED = False
 
     assert client.get(reverse("grantor_django:start")).status_code == 404
     assert client.get(reverse("grantor_django:callback")).status_code == 404
+    assert client.post(reverse("grantor_django:logout")).status_code == 404
+
+
+def test_sign_out_still_works_when_it_is_on(client, issuer, local_user, settings):
+    """The guard must not have closed the door on the working case."""
+    settings.GRANTOR_ENABLED = True
+    client.force_login(local_user)
+
+    response = client.post(reverse("grantor_django:logout"))
+
+    assert response.status_code == 302
+    assert "_auth_user_id" not in client.session
 
 
 def test_the_transaction_cookie_is_scoped_to_where_the_views_are_mounted(client, issuer):

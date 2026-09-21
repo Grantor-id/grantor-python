@@ -24,9 +24,15 @@ A Django admin with no local password at all.
   flags corrected on the way out.
 - Signing out of the admin **ends the issuer session too**.
 - A documented break-glass path, `manage.py grantor_break_glass`, behind
-  two deliberate acts: the command hands out a password, and
-  `GRANTOR_ADMIN_BREAK_GLASS = True` decides whether any form will take one.
-  It prints how to close it and what to read in the audit trail afterwards.
+  two deliberate acts: the command hands out a password **and `is_staff`**,
+  and `GRANTOR_ADMIN_BREAK_GLASS = True` decides whether any form will take
+  one. Both grants are needed — Django's admin form rejects a non-staff
+  user before it reads the password, and an admin installed as designed has
+  no staff rows at all. `--close` undoes both. `--create` provisions an
+  account when there is nobody left to unlock, and only when asked.
+  It prints how to close it, that the setting is a **Django setting and not
+  an environment variable**, whether `ModelBackend` is even installed, and
+  what to read in the audit trail afterwards.
 
 ### `grantor-django[drf]`
 
@@ -86,8 +92,10 @@ Sign in with Grantor, link on `sub`, sign out properly.
   reporting every problem at once — and asks only for what this project
   actually uses, so a resource server is never made to name a callback.
 - `GRANTOR_ENABLED = False` supports a dark deploy: nothing is required of
-  a configuration nobody is using yet, and the sign-in routes answer 404
-  rather than 500. Anything that *is* set is still checked.
+  a configuration nobody is using yet, and **all three** routes answer 404
+  rather than 500 — sign-out included, since it is the one that could
+  otherwise end a real session at the issuer while the feature is off.
+  Anything that *is* set is still checked.
 
 ### `grantor`
 

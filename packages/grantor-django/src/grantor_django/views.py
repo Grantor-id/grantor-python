@@ -234,6 +234,13 @@ def sign_out(request: HttpRequest) -> HttpResponse:
     silently signed back in by a shared session they were never shown has
     been told something untrue.
     """
+    # The dark-deploy switch has to cover this route too. A project rolling
+    # the integration out behind the flag would otherwise publish a live
+    # sign-out that reaches the real issuer and ends a real session — the
+    # one route of the three that could do something irreversible while the
+    # feature is supposed to be off.
+    _require_enabled()
+
     id_token = request.COOKIES.get(conf.get("GRANTOR_ID_TOKEN_COOKIE_NAME"), "")
     logout(request)
 
