@@ -20,12 +20,41 @@ def test_a_correct_configuration_raises_nothing():
     assert _grantor_errors() == []
 
 
-@pytest.mark.parametrize("name", conf.REQUIRED_SETTINGS)
+@pytest.mark.parametrize(
+    "name", [*conf.REQUIRED_SETTINGS, *conf.SESSION_LOGIN_SETTINGS, "GRANTOR_AUDIENCE"]
+)
 def test_a_missing_required_setting_fails_at_boot(settings, name):
-    """Not at the first sign-in, when the person looking cannot fix it."""
+    """Not at the first sign-in, when the person looking cannot fix it.
+
+    This project mounts the session views *and* configures the resource
+    server, so all of these apply to it.
+    """
     setattr(settings, name, "")
     messages = [e.msg for e in _grantor_errors()]
     assert any(name in m for m in messages)
+
+
+def test_a_project_without_the_session_views_is_not_asked_for_a_callback(settings):
+    """A resource server has no callback of its own, and no client id either.
+
+    Demanding them would refuse to boot a consumer that is using this
+    library entirely correctly — which is exactly the shape of the first
+    application it was extracted from.
+    """
+    settings.ROOT_URLCONF = "djangoproject.urls_api_only"
+    settings.GRANTOR_CLIENT_ID = ""
+    settings.GRANTOR_CALLBACK_BASE_URL = ""
+
+    messages = [e.msg for e in _grantor_errors()]
+    assert not any("GRANTOR_CLIENT_ID" in m or "GRANTOR_CALLBACK_BASE_URL" in m for m in messages)
+
+
+def test_that_project_is_still_asked_for_an_audience(settings):
+    """What it does need, it is still asked for."""
+    settings.ROOT_URLCONF = "djangoproject.urls_api_only"
+    settings.GRANTOR_AUDIENCE = ""
+
+    assert any("GRANTOR_AUDIENCE" in e.msg for e in _grantor_errors())
 
 
 def test_an_http_issuer_is_refused(settings):
@@ -114,3 +143,83 @@ def test_the_transaction_cookie_is_lax_and_not_strict(client, issuer):
     cookie = client.cookies["grantor_txn"]
     assert cookie["samesite"] == "Lax"
     assert cookie["httponly"]
+
+
+def test_a_dark_deploy_boots_without_any_grantor_configuration(settings):
+    """Deploy the code first, turn it on later.
+
+    A project rolling this out behind a flag has the app installed and the
+    URLs mounted before any client id exists. Refusing to boot until one
+    does would make the dark deploy impossible, which is the whole point of
+    a dark deploy.
+    """
+    settings.GRANTOR_ENABLED = False
+    settings.GRANTOR_CLIENT_ID = ""
+    settings.GRANTOR_ISSUER = ""
+
+    assert _grantor_errors() == []
+
+
+def test_a_half_finished_rollout_still_hears_about_a_malformed_value(settings):
+    """Not required is not the same as not checked."""
+    settings.GRANTOR_ENABLED = False
+    settings.GRANTOR_ISSUER = "http://acme.api.grantor.id"
+
+    assert any("https" in e.msg for e in _grantor_errors())
+
+
+def test_every_route_is_absent_while_it_is_off(client, settings):
+    """404, not 500 — a route that is not enabled does not exist yet.
+
+    **All three**, sign-out included. It is the one of them that can do
+    something irreversible: a live `/sso/logout` under a flag that is
+    supposed to be off reaches the real issuer and ends a real session.
+    A switch that two of three routes honour is not a switch.
+    """
+    settings.GRANTOR_ENABLED = False
+
+    assert client.get(reverse("grantor_django:start")).status_code == 404
+    assert client.get(reverse("grantor_django:callback")).status_code == 404
+    assert client.post(reverse("grantor_django:logout")).status_code == 404
+
+
+def test_sign_out_still_works_when_it_is_on(client, issuer, local_user, settings):
+    """The guard must not have closed the door on the working case."""
+    settings.GRANTOR_ENABLED = True
+    client.force_login(local_user)
+
+    response = client.post(reverse("grantor_django:logout"))
+
+    assert response.status_code == 302
+    assert "_auth_user_id" not in client.session
+
+
+def test_the_transaction_cookie_is_scoped_to_where_the_views_are_mounted(client, issuer):
+    """It carries a PKCE verifier. It has no business on every request.
+
+    This project mounts the library at `identity/`, so the cookie belongs
+    to `/identity/sso` — derived from the URLconf rather than configured,
+    and rather than left at `/`.
+    """
+    client.get(reverse("grantor_django:start"))
+    assert client.cookies["grantor_txn"]["path"] == "/identity/sso"
+
+
+def test_the_destination_parameter_can_be_renamed(client, issuer, settings, local_user):
+    """An adopter's front end already builds this URL."""
+    from urllib.parse import parse_qs, urlparse
+
+    settings.GRANTOR_NEXT_PARAM = "redirectTo"
+    start = client.get(reverse("grantor_django:start"), {"redirectTo": "/inbox"})
+    params = {k: v[0] for k, v in parse_qs(urlparse(start["Location"]).query).items()}
+    issuer["echo_nonce"] = params["nonce"]
+
+    from djangoproject.models import Profile
+
+    Profile.objects.filter(user=local_user).update(
+        grantor_sub="0d9b1a7e-1a62-4a0e-9b7a-1f0f2c3d4e5f"
+    )
+    response = client.get(
+        reverse("grantor_django:callback"), {"code": "c", "state": params["state"]}
+    )
+    assert response["Location"] == "/inbox"

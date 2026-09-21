@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.urls import include, path
 
 from djangoproject import api
+from djangoproject.adminsite import site as admin_site
 
 urlpatterns = [
     path("identity/", include("grantor_django.urls")),
@@ -17,4 +18,5 @@ urlpatterns = [
     path("api/whoami", api.WhoAmI.as_view(), name="whoami"),
     path("api/things", api.Things.as_view(), name="things"),
     path("api/admin-only", api.AdminOnly.as_view(), name="admin-only"),
+    path("admin/", admin_site.urls),
 ]

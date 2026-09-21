@@ -11,10 +11,24 @@
 #
 #     owner        Grantor-id
 #     repository   grantor-python
-#     workflow     release.yml          ← the name of THIS file
-#     environment  pypi                 ← declared on the publish job below
+#     workflow     release.yml              ← the name of THIS file
+#     environment  pypi-grantor             ← publish-grantor, below
+#                  pypi-grantor-django      ← publish-grantor-django, below
 #
-# Renaming this file, or the environment, breaks the release with an
+# **Two environments, and that is not a style choice.** PyPI keys a pending
+# publisher on exactly those four values, and the *project name is not part
+# of the key* — so two publishers that agree on all four are a duplicate,
+# and registering the second is refused:
+#
+#     A pending trusted publisher matching this configuration has already
+#     been registered for a different project name.
+#
+# One environment per project is the only shape that registers. Both must
+# also exist on the repository: a job naming an environment that does not
+# exist creates it implicitly, with no protection rules, which is not what
+# anybody wants on the job that can publish to PyPI.
+#
+# Renaming this file, or either environment, breaks the release with an
 # authentication error that looks nothing like its cause.
 name: Release
 
@@ -59,11 +73,11 @@ jobs:
           name: distributions
           path: dist/
 
-  publish:
-    name: publish to PyPI
+  publish-grantor:
+    name: publish grantor
     needs: build
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: pypi-grantor
     permissions:
       # The only permission the publish needs, and the reason no secret does.
       id-token: write
@@ -73,15 +87,28 @@ jobs:
           name: distributions
           path: dist/
 
-      - name: Publish grantor
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/grantor/
 
-      - name: Publish grantor-django
-        # Second, and in this order on purpose: `grantor-django` depends on
-        # `grantor~=0.1`, so a consumer who installs it the moment it appears
-        # finds the core already there.
-        uses: pypa/gh-action-pypi-publish@release/v1
+  publish-grantor-django:
+    name: publish grantor-django
+    # `needs` is not sequencing for its own sake: `grantor-django` depends on
+    # `grantor`, so the core has to be on PyPI first. Publishing the adapter
+    # against a core nobody can install yet produces a release that is
+    # uninstallable for however long the gap lasts — and a version on PyPI
+    # cannot be replaced, only yanked.
+    needs: publish-grantor
+    runs-on: ubuntu-latest
+    environment: pypi-grantor-django
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/grantor-django/

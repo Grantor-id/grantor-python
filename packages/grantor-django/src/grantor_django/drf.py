@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+import jwt
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
@@ -149,6 +150,22 @@ def roles_of(claims: Mapping[str, Any]) -> tuple[str, ...]:
     return ()
 
 
+def _looks_like_a_jwt(raw: str) -> bool:
+    """Three non-empty base64url segments, and a header that parses.
+
+    Cheap, local, and decisive: anything that fails this was never a token
+    from this issuer, so declining it is not a refusal — it is leaving it
+    for whoever it belongs to.
+    """
+    if raw.count(".") != 2 or not all(part for part in raw.split(".")):
+        return False
+    try:
+        jwt.get_unverified_header(raw)
+    except Exception:
+        return False
+    return True
+
+
 def _resolver():
     path = getattr(settings, "GRANTOR_DRF_USER_RESOLVER", None)
     return import_string(path) if path else None
@@ -172,6 +189,13 @@ class GrantorJWTAuthentication(authentication.BaseAuthentication):
             return None
         raw = header[len(prefix) :].strip()
         if not raw or self._belongs_to_someone_else(raw):
+            return None
+        if not _looks_like_a_jwt(raw):
+            # Decline before touching the network. An API may mint its own
+            # opaque credentials under the same `Bearer` scheme, and trying
+            # to verify one of those would fetch discovery, fail, and answer
+            # 503 — turning another authenticator's perfectly good token
+            # into an outage report. Shape first, issuer second.
             return None
 
         try:

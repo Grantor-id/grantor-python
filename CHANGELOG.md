@@ -8,6 +8,32 @@ release; they decouple at `1.0.0`.
 
 ## Unreleased
 
+### `grantor-django[admin]`
+
+A Django admin with no local password at all.
+
+- `GrantorAdminSite` — the login view **redirects to the issuer**; Django's
+  password form is replaced, not hidden, because a hidden form is a form
+  somebody finds.
+- `is_staff` / `is_superuser` are set from `GRANTOR_ADMIN_ROLE` on every
+  sign-in, **including to `False`**. A role revoked at the issuer takes
+  effect at the next sign-in, and the local record says so rather than
+  keeping a stale flag.
+- Admin users are created with an unusable password, and **a refused person
+  leaves no record at all** — only an account that already exists has its
+  flags corrected on the way out.
+- Signing out of the admin **ends the issuer session too**.
+- A documented break-glass path, `manage.py grantor_break_glass`, behind
+  two deliberate acts: the command hands out a password **and `is_staff`**,
+  and `GRANTOR_ADMIN_BREAK_GLASS = True` decides whether any form will take
+  one. Both grants are needed — Django's admin form rejects a non-staff
+  user before it reads the password, and an admin installed as designed has
+  no staff rows at all. `--close` undoes both. `--create` provisions an
+  account when there is nobody left to unlock, and only when asked.
+  It prints how to close it, that the setting is a **Django setting and not
+  an environment variable**, whether `ModelBackend` is even installed, and
+  what to read in the audit trail afterwards.
+
 ### `grantor-django[drf]`
 
 A DRF API that answers to a Grantor access token.
@@ -23,8 +49,10 @@ A DRF API that answers to a Grantor access token.
 - A caller needs no local record: the default principal is a `GrantorUser`
   built from the claims. `GRANTOR_DRF_USER_RESOLVER` maps onto a local row
   instead, and `grantor_django.drf.resolve_local_user` is a ready-made one.
-- `GRANTOR_DRF_IGNORE_TOKEN_PREFIXES` leaves another authenticator's
-  credentials alone rather than 401-ing them before it sees them.
+- A token that is not shaped like a JWT is **declined locally, before any
+  network call** — another authenticator's opaque credential must not
+  become a 503 about the identity provider.
+  `GRANTOR_DRF_IGNORE_TOKEN_PREFIXES` declines by prefix as well.
 - An unreachable issuer answers **503, not 401** — it is not the caller's
   fault and re-authenticating will not help.
 - `GRANTOR_HTTP_CLIENT_FACTORY` supplies a configured `httpx.Client` — a
@@ -52,8 +80,22 @@ Sign in with Grantor, link on `sub`, sign out properly.
   is `Lax` because the callback is a top-level cross-site redirect.
 - Sign-out drops the local session **first**, then redirects to the issuer
   with the `id_token_hint`. POST only.
+- Serves the **other** Django shape too: a browser application on its own
+  origin, with a session that is not Django's.
+  `GRANTOR_FRONTEND_BASE_URL` makes `next` a path resolved against it — a
+  narrower promise than "same host", since no value can name a host at all.
+  `GRANTOR_ESTABLISH_SESSION` replaces `login()` with a project's own
+  scheme, receiving the response and the issuer's tokens so it can set its
+  own cookies. `GRANTOR_ERROR_PARAM` keeps the query-parameter name a
+  project's front end already reads.
 - A Django system check fails the boot on a missing or malformed setting,
-  reporting every problem at once.
+  reporting every problem at once — and asks only for what this project
+  actually uses, so a resource server is never made to name a callback.
+- `GRANTOR_ENABLED = False` supports a dark deploy: nothing is required of
+  a configuration nobody is using yet, and **all three** routes answer 404
+  rather than 500 — sign-out included, since it is the one that could
+  otherwise end a real session at the issuer while the feature is off.
+  Anything that *is* set is still checked.
 
 ### `grantor`
 
@@ -89,3 +131,7 @@ before there is anything to get wrong.
   Empty.
 - Python 3.10+, Django 4.2 LTS and 5.x.
 - Published by PyPI Trusted Publishing from a tag. No token exists.
+  **Two environments, `pypi-grantor` and `pypi-grantor-django`** — PyPI keys
+  a pending publisher on (owner, repository, workflow, environment) and the
+  project name is not part of that key, so one environment for both is a
+  duplicate registration and the second is refused.
