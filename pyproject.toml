@@ -28,8 +28,13 @@ extend-exclude = ["tests/djangoproject/**/migrations"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S"]
+
+[tool.ruff.lint.per-file-ignores]
 # S101: pytest is built on `assert`.
-per-file-ignores = { "tests/**" = ["S101"] }
+# S105/S106: test fixtures name secrets out loud on purpose — several tests
+# exist precisely to prove those values do not escape into a repr or a log.
+"tests/**" = ["S101", "S105", "S106"]
+"packages/*/tests/**" = ["S101", "S105", "S106"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages/grantor/tests", "packages/grantor-django/tests", "tests"]
