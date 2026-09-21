@@ -97,11 +97,16 @@ def user_for_claims(claims: dict[str, Any]) -> Any:
 
     User = get_user_model()
     username_field = getattr(User, "USERNAME_FIELD", "username")
-    user, created = User._default_manager.get_or_create(
-        **{username_field: claims["sub"]},
-        defaults={"email": claims.get("email", "")},
-    )
-    if created:
+    user = User._default_manager.filter(**{username_field: claims["sub"]}).first()
+
+    if user is None:
+        # A person being refused leaves no record behind. Creating one would
+        # let anybody who can reach the issuer populate this table, and a row
+        # in a table called `user` on an admin surface reads like an account
+        # whether or not its flags say otherwise.
+        if not holds_it:
+            _refuse(claims, required_role)
+        user = User(**{username_field: claims["sub"], "email": claims.get("email", "")})
         # No password path exists on this side, so there is nothing to guess.
         user.set_unusable_password()
 
@@ -113,13 +118,20 @@ def user_for_claims(claims: dict[str, Any]) -> Any:
     user.save()
 
     if not holds_it:
-        logger.warning(
-            "grantor admin: refused sub %s — the %s role is required",
-            claims.get("sub"),
-            required_role,
-        )
-        raise PermissionDenied(f"the {required_role} role is required to use this admin")
+        # An account that already exists is told the truth even as it is
+        # turned away: never creating and never updating are different
+        # rules, and only the first one is right.
+        _refuse(claims, required_role)
     return user
+
+
+def _refuse(claims: dict[str, Any], required_role: str) -> None:
+    logger.warning(
+        "grantor admin: refused sub %s — the %s role is required",
+        claims.get("sub"),
+        required_role,
+    )
+    raise PermissionDenied(f"the {required_role} role is required to use this admin")
 
 
 class GrantorAdminSite(AdminSite):

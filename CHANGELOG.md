@@ -19,7 +19,9 @@ A Django admin with no local password at all.
   sign-in, **including to `False`**. A role revoked at the issuer takes
   effect at the next sign-in, and the local record says so rather than
   keeping a stale flag.
-- Admin users are created with an unusable password.
+- Admin users are created with an unusable password, and **a refused person
+  leaves no record at all** — only an account that already exists has its
+  flags corrected on the way out.
 - Signing out of the admin **ends the issuer session too**.
 - A documented break-glass path, `manage.py grantor_break_glass`, behind
   two deliberate acts: the command hands out a password, and

@@ -99,12 +99,16 @@ def test_an_admin_user_has_no_usable_password_even_in_principle(client, admin_is
 
 
 def test_somebody_without_the_role_is_refused_not_shown_a_blank_admin(client, admin_issuer):
+    """A refusal, not an empty admin — and not a record either.
+
+    Where the flags of an account that *already* exists get corrected on the
+    way out, see `test_a_standing_account_still_has_its_flags_corrected`.
+    """
     response, _ = _sign_in(client, admin_issuer, ["billing"])
 
     assert response.status_code == 403
     assert "_auth_user_id" not in client.session
-    user = get_user_model().objects.get(username=SUB)
-    assert not user.is_staff and not user.is_superuser
+    assert not get_user_model().objects.filter(username=SUB).exists()
 
 
 def test_a_revoked_role_takes_effect_on_the_next_sign_in(client, admin_issuer):
@@ -155,3 +159,33 @@ def test_signing_out_of_the_admin_ends_the_issuer_session_too(client, admin_issu
     params = {k: v[0] for k, v in parse_qs(urlparse(response["Location"]).query).items()}
     assert params["id_token_hint"]
     assert "_auth_user_id" not in client.session
+
+
+def test_somebody_who_never_had_the_role_leaves_no_record_behind(client, admin_issuer):
+    """A refusal must not populate the user table.
+
+    Otherwise anybody who can reach the issuer can create rows here, and a
+    row in a table called `user` on an admin surface reads like an account
+    whether or not its flags say so.
+    """
+    response, _ = _sign_in(client, admin_issuer, ["viewer"])
+
+    assert response.status_code == 403
+    assert get_user_model().objects.count() == 0
+
+
+def test_a_standing_account_still_has_its_flags_corrected(client, admin_issuer):
+    """The other half: an existing record is told the truth even on a refusal.
+
+    Never creating and never updating are different rules, and only the
+    first one is right.
+    """
+    _sign_in(client, admin_issuer, ["superadmin"])
+    assert get_user_model().objects.get(username=SUB).is_superuser
+
+    client.logout()
+    _sign_in(client, admin_issuer, ["viewer"])
+
+    user = get_user_model().objects.get(username=SUB)
+    assert not user.is_staff
+    assert not user.is_superuser
