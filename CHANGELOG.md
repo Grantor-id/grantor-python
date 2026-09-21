@@ -8,6 +8,30 @@ release; they decouple at `1.0.0`.
 
 ## Unreleased
 
+### `grantor-django[drf]`
+
+A DRF API that answers to a Grantor access token.
+
+- `GrantorJWTAuthentication` — verified by signature against JWKS, with
+  **the audience being this API**, from `GRANTOR_AUDIENCE`. There is no
+  fallback to `GRANTOR_CLIENT_ID`: a fallback would be silently accepted by
+  everyone who forgot to set it and would undo the one check this module
+  exists for.
+- `HasGrantorScope("things:write")` and `HasGrantorRole("admin")`.
+- `roles` read as a flat array at the top level. `permissions` is not read
+  from a token — it lives on userinfo only.
+- A caller needs no local record: the default principal is a `GrantorUser`
+  built from the claims. `GRANTOR_DRF_USER_RESOLVER` maps onto a local row
+  instead, and `grantor_django.drf.resolve_local_user` is a ready-made one.
+- `GRANTOR_DRF_IGNORE_TOKEN_PREFIXES` leaves another authenticator's
+  credentials alone rather than 401-ing them before it sees them.
+- An unreachable issuer answers **503, not 401** — it is not the caller's
+  fault and re-authenticating will not help.
+- `GRANTOR_HTTP_CLIENT_FACTORY` supplies a configured `httpx.Client` — a
+  proxy, a private CA, a client certificate — for every request this
+  package makes, so the sign-in half and the resource server cannot end up
+  configured differently.
+
 ### `grantor-django`
 
 Sign in with Grantor, link on `sub`, sign out properly.

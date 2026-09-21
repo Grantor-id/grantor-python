@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "grantor_django",
+    "rest_framework",
     "djangoproject",
 ]
 
@@ -65,3 +66,13 @@ GRANTOR_SUBJECT_FIELD = "profile.grantor_sub"
 GRANTOR_LOGIN_REDIRECT_URL = "/"
 GRANTOR_ERROR_REDIRECT_URL = "/login"
 GRANTOR_POST_LOGOUT_REDIRECT_URI = "https://app.example.com/goodbye"
+
+# --- the resource-server half ----------------------------------------------
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["grantor_django.drf.GrantorJWTAuthentication"],
+}
+GRANTOR_AUDIENCE = "https://api.example.com"
+# This API mints its own agent credentials under the same Bearer scheme;
+# they are not Grantor's to refuse.
+GRANTOR_DRF_IGNORE_TOKEN_PREFIXES = ["amt_"]
+# ---------------------------------------------------------------------------

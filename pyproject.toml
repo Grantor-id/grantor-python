@@ -19,6 +19,7 @@ dev = [
     "pytest-django>=4.11",
     "respx>=0.22",
     "packaging>=24",
+    "djangorestframework>=3.18.1",
 ]
 
 [tool.ruff]

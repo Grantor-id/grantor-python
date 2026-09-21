@@ -34,6 +34,7 @@ def callback_url() -> str:
 def get_client() -> GrantorClient:
     return GrantorClient(
         conf.issuer(),
+        http=conf.http_client(),
         client_id=conf.client_id(),
         client_secret=conf.client_secret(),
         redirect_uri=callback_url(),

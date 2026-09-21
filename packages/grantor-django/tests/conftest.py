@@ -20,8 +20,6 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth import get_user_model
-from grantor import GrantorClient
-from grantor_django import client as client_module
 from jwt.algorithms import RSAAlgorithm
 
 ISSUER = "https://acme.api.grantor.id"
@@ -121,17 +119,10 @@ def issuer(keypair, monkeypatch):
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
 
-    def fake_get_client() -> GrantorClient:
-        return GrantorClient(
-            ISSUER,
-            http=http,
-            client_id=CLIENT_ID,
-            client_secret="test-client-secret",
-            redirect_uri=client_module.callback_url(),
-        )
-
-    monkeypatch.setattr(client_module, "get_client", fake_get_client)
-    monkeypatch.setattr("grantor_django.views.get_client", fake_get_client)
+    # Injected through the library's own seam rather than by replacing
+    # `get_client`, so the real factory runs — including the callback URL it
+    # derives from the URLconf, which is a thing worth having under test.
+    monkeypatch.setattr("grantor_django.conf.http_client", lambda: http)
 
     state["id_token_for"] = id_token_for
     return state
