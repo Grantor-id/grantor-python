@@ -30,11 +30,14 @@ __all__ = [
     "check_configuration",
 ]
 
-REQUIRED_SETTINGS = (
-    "GRANTOR_ISSUER",
-    "GRANTOR_CLIENT_ID",
-    "GRANTOR_CALLBACK_BASE_URL",
-)
+# Always required: the issuer is the one string this library cannot work out.
+REQUIRED_SETTINGS = ("GRANTOR_ISSUER",)
+
+# Required only by the session-login half, and therefore only when this
+# project actually mounts `grantor_django.urls`. A resource server or an
+# admin has no callback of its own, and demanding one would refuse to boot a
+# consumer that is using the library entirely correctly.
+SESSION_LOGIN_SETTINGS = ("GRANTOR_CLIENT_ID", "GRANTOR_CALLBACK_BASE_URL")
 
 _DEFAULTS: dict[str, Any] = {
     "GRANTOR_CLIENT_SECRET": None,
@@ -138,6 +141,33 @@ def cookie_secure() -> bool:
     return bool(value)
 
 
+def _session_login_is_mounted() -> bool:
+    """Is ``grantor_django.urls`` actually included in this project?
+
+    Asked of the URLconf rather than of a setting, because the URLconf is
+    the fact — a project that includes the views needs a callback URL and a
+    client id, and one that does not is a resource server or an admin and
+    needs neither.
+    """
+    from django.urls import reverse
+
+    try:
+        reverse("grantor_django:callback")
+    except Exception:
+        # Deliberately broad. A system check runs while the project is still
+        # coming up, and a URLconf that cannot be imported yet must produce
+        # "the session views are not mounted", not a second error on top of
+        # whatever is already wrong.
+        return False
+    return True
+
+
+def _resource_server_is_configured() -> bool:
+    rest = getattr(settings, "REST_FRAMEWORK", None) or {}
+    classes = rest.get("DEFAULT_AUTHENTICATION_CLASSES") or ()
+    return any("grantor_django.drf" in str(entry) for entry in classes)
+
+
 def check_configuration() -> list[str]:
     """Every complaint this configuration deserves, as plain sentences.
 
@@ -146,7 +176,13 @@ def check_configuration() -> list[str]:
     """
     problems: list[str] = []
 
-    for name in REQUIRED_SETTINGS:
+    required = list(REQUIRED_SETTINGS)
+    if _session_login_is_mounted():
+        required.extend(SESSION_LOGIN_SETTINGS)
+    if _resource_server_is_configured():
+        required.append("GRANTOR_AUDIENCE")
+
+    for name in required:
         value = getattr(settings, name, None)
         if not value or not isinstance(value, str):
             problems.append(f"{name} must be set to a non-empty string.")

@@ -20,12 +20,41 @@ def test_a_correct_configuration_raises_nothing():
     assert _grantor_errors() == []
 
 
-@pytest.mark.parametrize("name", conf.REQUIRED_SETTINGS)
+@pytest.mark.parametrize(
+    "name", [*conf.REQUIRED_SETTINGS, *conf.SESSION_LOGIN_SETTINGS, "GRANTOR_AUDIENCE"]
+)
 def test_a_missing_required_setting_fails_at_boot(settings, name):
-    """Not at the first sign-in, when the person looking cannot fix it."""
+    """Not at the first sign-in, when the person looking cannot fix it.
+
+    This project mounts the session views *and* configures the resource
+    server, so all of these apply to it.
+    """
     setattr(settings, name, "")
     messages = [e.msg for e in _grantor_errors()]
     assert any(name in m for m in messages)
+
+
+def test_a_project_without_the_session_views_is_not_asked_for_a_callback(settings):
+    """A resource server has no callback of its own, and no client id either.
+
+    Demanding them would refuse to boot a consumer that is using this
+    library entirely correctly — which is exactly the shape of the first
+    application it was extracted from.
+    """
+    settings.ROOT_URLCONF = "djangoproject.urls_api_only"
+    settings.GRANTOR_CLIENT_ID = ""
+    settings.GRANTOR_CALLBACK_BASE_URL = ""
+
+    messages = [e.msg for e in _grantor_errors()]
+    assert not any("GRANTOR_CLIENT_ID" in m or "GRANTOR_CALLBACK_BASE_URL" in m for m in messages)
+
+
+def test_that_project_is_still_asked_for_an_audience(settings):
+    """What it does need, it is still asked for."""
+    settings.ROOT_URLCONF = "djangoproject.urls_api_only"
+    settings.GRANTOR_AUDIENCE = ""
+
+    assert any("GRANTOR_AUDIENCE" in e.msg for e in _grantor_errors())
 
 
 def test_an_http_issuer_is_refused(settings):
