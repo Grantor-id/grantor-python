@@ -83,7 +83,7 @@ def issue(response: HttpResponse, txn: Transaction) -> None:
         max_age=conf.get("GRANTOR_TXN_MAX_AGE"),
         httponly=True,
         secure=conf.cookie_secure(),
-        samesite="Lax",
+        samesite=conf.cookie_samesite(),
         path=cookie_path(),
     )
 

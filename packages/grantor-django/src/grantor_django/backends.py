@@ -21,6 +21,7 @@ from typing import Any
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
 from django.db import IntegrityError, transaction
+from django.utils.module_loading import import_string
 
 from . import conf
 
@@ -30,6 +31,28 @@ logger = logging.getLogger("grantor_django")
 
 
 def _user_queryset():
+    """The set of people this project considers real.
+
+    ``_default_manager`` is the wrong answer on its own, and the reason is
+    not obvious: ``find_by_subject`` filters across a relation, and **a
+    related-field join reads the related table directly**. The related
+    model's own manager never runs, so a project whose `Profile` manager
+    excludes soft-deleted rows has those rows silently back in scope here.
+
+    That is not a tidiness problem. A soft-deleted profile that still
+    authenticates is exactly the "attach a person to the wrong account"
+    failure the whole `sub` rule exists to prevent — and with a conditional
+    unique index on live rows only, the same `sub` can be linked to a second
+    live account while the deleted one goes on signing in. Two accounts, one
+    subject, both real.
+
+    ``GRANTOR_USER_QUERYSET`` names a callable returning the queryset to
+    use, so a project states its own answer once and every lookup here
+    honours it.
+    """
+    path = conf.get("GRANTOR_USER_QUERYSET")
+    if path:
+        return import_string(path)()
     return get_user_model()._default_manager.all()
 
 
@@ -84,7 +107,12 @@ def link_by_verified_email(claims: Mapping[str, Any], sub: str) -> Any | None:
     target = _set_subject(candidate, sub)
     try:
         with transaction.atomic():
-            target.save(update_fields=[conf.subject_field()[1]])
+            # Deliberately a full save rather than `update_fields=[field]`.
+            # `update_fields` makes Django skip every column not named,
+            # `auto_now` ones included — so the linked row's `updated_at`
+            # came out byte-identical before and after, and the one event
+            # most worth a timestamp was the one event with none.
+            target.save()
     except IntegrityError:
         # A concurrent callback linked this sub first. Whoever won owns it,
         # and the loser must not overwrite them.

@@ -95,10 +95,25 @@ _DEFAULTS: dict[str, Any] = {
     "GRANTOR_TXN_MAX_AGE": 600,
     "GRANTOR_ID_TOKEN_COOKIE_NAME": "grantor_id_token",
     "GRANTOR_COOKIE_SECURE": None,  # None → the opposite of DEBUG
+    # `Lax` is right for nearly everybody and is what the callback needs:
+    # it arrives as a top-level cross-site redirect, which `Strict` strips.
+    #
+    # It is a setting rather than a constant because this library explicitly
+    # supports a browser application on another origin
+    # (`GRANTOR_FRONTEND_BASE_URL`), and that is exactly the shape that ends
+    # up needing `None` with `Secure`. Cheaper as a setting now than as a
+    # breaking change after 1.0.
+    "GRANTOR_COOKIE_SAMESITE": "Lax",
     "GRANTOR_TIMEOUT": 15.0,
-    # How long a discovery document and its JWKS are reused. The name is
-    # the one the consumers already use, so adopting this library is a code
-    # change and not a configuration migration.
+    # How long a discovery document **and its key set** are reused. The name
+    # is the one the consumers already use, so adopting this library is a
+    # code change and not a configuration migration.
+    #
+    # It really does bound both. For one release it bounded only discovery,
+    # while the key set never expired at all — so a key the issuer had
+    # withdrawn went on being accepted until the process restarted, under a
+    # setting whose name said otherwise. A setting that quietly stops
+    # meaning what it says is worse than one that was never there.
     "GRANTOR_JWKS_CACHE_SECONDS": 3600,
     # A dotted path to a zero-argument callable returning an `httpx.Client`,
     # for a project that must reach the issuer through a proxy, present a
@@ -106,6 +121,15 @@ _DEFAULTS: dict[str, Any] = {
     # request this package makes — the sign-in flow and the resource server
     # alike — so those cannot end up configured differently.
     "GRANTOR_HTTP_CLIENT_FACTORY": None,
+    # A dotted path to a zero-argument callable returning the queryset of
+    # people this project considers real — for a project whose users or
+    # profiles are soft-deleted, or otherwise narrowed by a custom manager.
+    #
+    # Needed because `find_by_subject` filters across a relation, and a
+    # related-field join reads the related table directly: the related
+    # model's manager never runs, so rows it excludes are back in scope.
+    # Without this a soft-deleted profile authenticates.
+    "GRANTOR_USER_QUERYSET": None,
 }
 
 
@@ -161,6 +185,10 @@ def http_client() -> Any:
     from django.utils.module_loading import import_string
 
     return import_string(path)()
+
+
+def cookie_samesite() -> str:
+    return str(get("GRANTOR_COOKIE_SAMESITE"))
 
 
 def cookie_secure() -> bool:

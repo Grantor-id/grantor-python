@@ -89,3 +89,29 @@ def test_the_secret_is_read_from_the_environment():
     # somebody to commit one.
     assert "sk_" not in QUICKSTART["settings"]
     assert "secret =" not in QUICKSTART["settings"].lower().replace("client_secret =", "")
+
+
+def test_the_sign_in_only_mount_keeps_the_namespace():
+    """A subset without the namespace is a silently wrong redirect URI.
+
+    Which the issuer then refuses with `invalid_redirect_uri`, at the
+    issuer, for a reason nothing on the consumer's side explains. So the
+    published snippet uses the export that carries `app_name` rather than
+    asking a reader to remember it.
+    """
+    snippet = QUICKSTART["urls_sign_in_only"]
+    assert "sign_in_urls" in snippet
+    assert "grantor_django.urls" in snippet
+
+    from grantor_django.urls import sign_in_urls
+
+    patterns, namespace = sign_in_urls
+    assert namespace == "grantor_django"
+    assert [p.name for p in patterns] == ["start", "callback"]
+
+
+def test_the_default_mount_publishes_three_routes():
+    """And a reader should be told, because two of them may not be wanted."""
+    from grantor_django.urls import urlpatterns
+
+    assert [p.name for p in urlpatterns] == ["start", "callback", "logout"]

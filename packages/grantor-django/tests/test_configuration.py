@@ -183,6 +183,31 @@ def test_every_route_is_absent_while_it_is_off(client, settings):
     assert client.post(reverse("grantor_django:logout")).status_code == 404
 
 
+def test_a_dark_deploy_never_reaches_the_issuer(client, settings, monkeypatch):
+    """The guarantee, not the implementation.
+
+    Asserting that `_require_enabled()` is called tests the code; a consumer
+    is relying on something larger — that while the flag is off, nothing
+    here touches their identity provider. In one consumer the consequence
+    was end-to-end: an unauthenticated POST to a published `/sso/logout`
+    reached the live issuer and ended a real session, with the feature
+    supposedly switched off.
+
+    So this makes any outbound call an error and drives all three routes.
+    """
+    settings.GRANTOR_ENABLED = False
+
+    def explode(*args, **kwargs):
+        raise AssertionError("the issuer must not be contacted while disabled")
+
+    monkeypatch.setattr("grantor_django.conf.http_client", explode)
+    monkeypatch.setattr("grantor_django.views.get_client", explode)
+
+    assert client.get(reverse("grantor_django:start")).status_code == 404
+    assert client.get(reverse("grantor_django:callback")).status_code == 404
+    assert client.post(reverse("grantor_django:logout")).status_code == 404
+
+
 def test_sign_out_still_works_when_it_is_on(client, issuer, local_user, settings):
     """The guard must not have closed the door on the working case."""
     settings.GRANTOR_ENABLED = True

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import secrets
 import threading
+import time
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -29,6 +30,7 @@ from ._errors import DiscoveryError, TokenError
 
 __all__ = [
     "JwksCache",
+    "DEFAULT_JWKS_TTL_SECONDS",
     "fetch_jwks",
     "async_fetch_jwks",
     "decode_and_verify",
@@ -48,6 +50,11 @@ __all__ = [
 # life of an expired token.
 LEEWAY_SECONDS = 30
 
+# How long a fetched key set is reused. Matches the discovery document's
+# default, and is what `GRANTOR_JWKS_CACHE_SECONDS` sets on the Django side
+# — the name always said JWKS; for a while it only bounded discovery.
+DEFAULT_JWKS_TTL_SECONDS = 3600.0
+
 ID_TOKEN_REQUIRED_CLAIMS = ("exp", "iat", "iss", "aud", "sub")
 ACCESS_TOKEN_REQUIRED_CLAIMS = ("exp", "iat", "iss", "aud", "sub")
 
@@ -60,29 +67,61 @@ def _key_id(raw: str) -> str | None:
 
 
 class JwksCache:
-    """The issuer's signing keys, cached, with one retry on an unknown ``kid``.
+    """The issuer's signing keys, cached with a TTL, with one retry on an
+    unknown ``kid``.
 
-    Key rotation is the case this class exists for, and it has two failure
-    modes that pull in opposite directions. Never refetching makes a
-    rotation an outage: every token signed with the new key is rejected
-    until the process restarts. Refetching on every miss makes a stream of
-    junk tokens into a request amplifier pointed at the issuer.
+    Three failure modes, pulling in three directions, and a key cache has to
+    miss all of them.
 
-    So: a miss refetches **once**, and a key still unknown after that is a
-    rejection.
+    *Never refetching* makes a rotation an outage: every token signed with
+    the new key is rejected until the process restarts. A miss therefore
+    refetches **once**, and a key still unknown after that is a rejection.
+
+    *Refetching on every miss, with no ceiling* turns a stream of junk
+    tokens into a request amplifier pointed at the issuer. Hence once, not
+    per-attempt.
+
+    *Never expiring* is the one this class got wrong first, and it is the
+    worst of the three, because it fails silently and in the safe-looking
+    direction. Rotation **in** was handled and withdrawal was not: a key the
+    issuer had retired went on being accepted for the life of the process.
+    In a long-lived container that is indefinitely, which makes revoking a
+    compromised key mean "restart every consumer" — not a control anybody
+    can rely on, and the product's own doctrine calls key rotation a control.
+
+    So the key set expires on ``ttl``, the same ``GRANTOR_JWKS_CACHE_SECONDS``
+    a consumer already believed bounded it.
     """
 
-    def __init__(self, jwks_uri: str, *, keys: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        jwks_uri: str,
+        *,
+        keys: Mapping[str, Any] | None = None,
+        ttl: float = DEFAULT_JWKS_TTL_SECONDS,
+    ) -> None:
         self.jwks_uri = jwks_uri
+        self.ttl = ttl
         self._lock = threading.Lock()
         self._key_set: PyJWKSet | None = None
+        self._expires_at = 0.0
         if keys is not None:
-            self._key_set = _key_set_from(keys)
+            self._store(keys)
 
-    def _lookup(self, kid: str | None) -> Any | None:
+    def _lookup(self, kid: str | None, *, require_fresh: bool = True) -> Any | None:
         with self._lock:
             key_set = self._key_set
-        if key_set is None:
+            fresh = time.monotonic() < self._expires_at
+        # A stale set is not consulted at all. Treating it as a miss means
+        # the refetch path picks up a withdrawal as well as an addition —
+        # the two halves of a rotation, rather than one.
+        #
+        # `require_fresh=False` is for the lookup immediately after a fetch,
+        # where the set is current by construction. Without it a `ttl` of 0
+        # discards the key it has just fetched and nothing ever verifies:
+        # "always refetch" would mean "never works", which is a worse
+        # failure than the one the TTL was added to fix.
+        if key_set is None or (require_fresh and not fresh):
             return None
         for key in key_set.keys:
             if kid is None or key.key_id == kid:
@@ -93,6 +132,7 @@ class JwksCache:
         key_set = _key_set_from(payload)
         with self._lock:
             self._key_set = key_set
+            self._expires_at = time.monotonic() + self.ttl
 
     def signing_key(
         self,
@@ -106,7 +146,7 @@ class JwksCache:
         if key is not None:
             return key
         self._store(fetch_jwks(self.jwks_uri, client=client, timeout=timeout))
-        key = self._lookup(kid)
+        key = self._lookup(kid, require_fresh=False)
         if key is None:
             raise TokenError("no signing key matches this token's kid")
         return key
@@ -123,7 +163,7 @@ class JwksCache:
         if key is not None:
             return key
         self._store(await async_fetch_jwks(self.jwks_uri, client=client, timeout=timeout))
-        key = self._lookup(kid)
+        key = self._lookup(kid, require_fresh=False)
         if key is None:
             raise TokenError("no signing key matches this token's kid")
         return key
@@ -140,12 +180,16 @@ _caches: dict[str, JwksCache] = {}
 _caches_lock = threading.Lock()
 
 
-def _cache_for(jwks_uri: str) -> JwksCache:
+def _cache_for(jwks_uri: str, ttl: float = DEFAULT_JWKS_TTL_SECONDS) -> JwksCache:
     with _caches_lock:
         cache = _caches.get(jwks_uri)
         if cache is None:
-            cache = JwksCache(jwks_uri)
+            cache = JwksCache(jwks_uri, ttl=ttl)
             _caches[jwks_uri] = cache
+        elif cache.ttl != ttl:
+            # A consumer that changed the setting means it; the cache is
+            # process state and must not outlive the configuration.
+            cache.ttl = ttl
         return cache
 
 
@@ -293,6 +337,7 @@ def verify_id_token(
     jwks: JwksCache | None = None,
     client: httpx.Client | None = None,
     leeway: int = LEEWAY_SECONDS,
+    jwks_ttl: float = DEFAULT_JWKS_TTL_SECONDS,
 ) -> dict[str, Any]:
     """Verify an ID token and return its claims.
 
@@ -304,7 +349,7 @@ def verify_id_token(
     ``jwks`` lets a caller supply a key set instead of fetching one, which
     is how this function is tested offline.
     """
-    cache = jwks or _cache_for(discovery.jwks_uri)
+    cache = jwks or _cache_for(discovery.jwks_uri, jwks_ttl)
     key = cache.signing_key(raw, client=client)
     return _verify(
         raw,
@@ -326,8 +371,9 @@ async def async_verify_id_token(
     jwks: JwksCache | None = None,
     client: httpx.AsyncClient | None = None,
     leeway: int = LEEWAY_SECONDS,
+    jwks_ttl: float = DEFAULT_JWKS_TTL_SECONDS,
 ) -> dict[str, Any]:
-    cache = jwks or _cache_for(discovery.jwks_uri)
+    cache = jwks or _cache_for(discovery.jwks_uri, jwks_ttl)
     key = await cache.async_signing_key(raw, client=client)
     return _verify(
         raw,
@@ -348,6 +394,7 @@ def verify_access_token(
     jwks: JwksCache | None = None,
     client: httpx.Client | None = None,
     leeway: int = LEEWAY_SECONDS,
+    jwks_ttl: float = DEFAULT_JWKS_TTL_SECONDS,
 ) -> dict[str, Any]:
     """Verify an access token presented to *this* resource server.
 
@@ -357,7 +404,7 @@ def verify_access_token(
     decorative — which is the difference between an audience check and the
     appearance of one.
     """
-    cache = jwks or _cache_for(discovery.jwks_uri)
+    cache = jwks or _cache_for(discovery.jwks_uri, jwks_ttl)
     key = cache.signing_key(raw, client=client)
     return _verify(
         raw,
@@ -378,8 +425,9 @@ async def async_verify_access_token(
     jwks: JwksCache | None = None,
     client: httpx.AsyncClient | None = None,
     leeway: int = LEEWAY_SECONDS,
+    jwks_ttl: float = DEFAULT_JWKS_TTL_SECONDS,
 ) -> dict[str, Any]:
-    cache = jwks or _cache_for(discovery.jwks_uri)
+    cache = jwks or _cache_for(discovery.jwks_uri, jwks_ttl)
     key = await cache.async_signing_key(raw, client=client)
     return _verify(
         raw,

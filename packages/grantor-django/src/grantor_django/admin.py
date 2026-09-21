@@ -43,6 +43,7 @@ from django.urls import path, reverse
 from grantor import GrantorClient, GrantorError, ProtocolError, TokenError, parse_redirect_error
 
 from . import conf, transaction
+from .views import relative_path_only
 
 __all__ = ["GrantorAdminSite", "user_for_claims", "admin_client", "BREAK_GLASS_SETTING"]
 
@@ -155,7 +156,12 @@ class GrantorAdminSite(AdminSite):
         if getattr(settings, BREAK_GLASS_SETTING, False):
             return self._break_glass_login(request, extra_context)
 
-        next_url = request.GET.get("next") or reverse(f"{self.name}:index")
+        # Same guard the session views use. Unvalidated, this sends the
+        # browser off-site **after a successful sign-in** — the moment a
+        # person is most likely to trust what they are looking at, on the
+        # most privileged surface the product has. The library already had
+        # `relative_path_only`; this path simply was not using it.
+        next_url = relative_path_only(request.GET.get("next"), reverse(f"{self.name}:index"))
         try:
             authorization = admin_client().start_authorization(
                 redirect_uri=self._redirect_uri(request)
@@ -310,7 +316,7 @@ class GrantorAdminSite(AdminSite):
             tokens.id_token,
             httponly=True,
             secure=conf.cookie_secure(),
-            samesite="Lax",
+            samesite=conf.cookie_samesite(),
             path="/",
         )
         return response
@@ -323,7 +329,7 @@ def _issue_txn(response: HttpResponse, txn: transaction.Transaction) -> None:
         max_age=conf.get("GRANTOR_TXN_MAX_AGE"),
         httponly=True,
         secure=conf.cookie_secure(),
-        samesite="Lax",
+        samesite=conf.cookie_samesite(),
         path="/",
     )
 

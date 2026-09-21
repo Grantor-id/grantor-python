@@ -206,3 +206,44 @@ def test_a_refusal_at_the_token_endpoint_is_logged_not_just_raised(client, admin
 
     assert response.status_code == 403
     assert "invalid_redirect_uri" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    ["https://evil.example.com/x", "//evil.example.com", "/\\evil.example.com", "http://evil"],
+)
+def test_the_admin_sign_in_is_not_an_open_redirect(client, admin_issuer, hostile):
+    """`?next=` sends the browser somewhere **after a successful sign-in**.
+
+    That is the moment a person is most likely to trust what they are
+    looking at, on the most privileged surface the product has. The session
+    views already guarded this; the admin path did not.
+    """
+    start = client.get(f"{reverse('admin:login')}?next={hostile}")
+    params = {k: v[0] for k, v in parse_qs(urlparse(start["Location"]).query).items()}
+    admin_issuer["echo_nonce"] = params["nonce"]
+    admin_issuer["claims"] = {"roles": ["superadmin"], "aud": ADMIN_CLIENT_ID}
+
+    response = client.get(
+        reverse("admin:grantor_callback"),
+        {"code": f"code-{next(_codes)}", "state": params["state"]},
+    )
+
+    assert response.status_code == 302
+    assert "evil.example.com" not in response["Location"]
+    assert "evil" not in response["Location"]
+
+
+def test_an_on_site_next_still_works(client, admin_issuer):
+    """The guard must not have closed the door on the working case."""
+    start = client.get(f"{reverse('admin:login')}?next=/admin/auth/user/")
+    params = {k: v[0] for k, v in parse_qs(urlparse(start["Location"]).query).items()}
+    admin_issuer["echo_nonce"] = params["nonce"]
+    admin_issuer["claims"] = {"roles": ["superadmin"], "aud": ADMIN_CLIENT_ID}
+
+    response = client.get(
+        reverse("admin:grantor_callback"),
+        {"code": f"code-{next(_codes)}", "state": params["state"]},
+    )
+
+    assert response["Location"] == "/admin/auth/user/"

@@ -16,8 +16,8 @@ import secrets
 from typing import Any
 
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import update_last_login
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
-from django.urls import NoReverseMatch, reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.module_loading import import_string
 from django.views.decorators.http import require_GET, require_POST
@@ -215,8 +215,22 @@ def callback(request: HttpRequest) -> HttpResponse:  # noqa: PLR0911 - one retur
 
     response = HttpResponseRedirect(txn.next_url)
     transaction.clear(response)
-    _keep_id_token(response, tokens.id_token)
+
+    # (h) Only when this library is the one managing cookies. A project that
+    # supplies `GRANTOR_ESTABLISH_SESSION` is by definition keeping its own,
+    # and writing one it is about to overwrite is at best redundant — at
+    # worst the two disagree about lifetime and whichever happens to be
+    # written second silently wins. Ordering is not a contract.
+    if not conf.get("GRANTOR_ESTABLISH_SESSION"):
+        _keep_id_token(response, tokens.id_token)
+
     establish_session(request, response, user, tokens)
+
+    # (c) `login()` fires `user_logged_in`, which is what updates
+    # `last_login`. A project replacing it loses that silently — nothing
+    # errors, the column just stops moving, and "when did this person last
+    # sign in" quietly becomes "when did they last use a password".
+    update_last_login(None, user)
     return response
 
 
@@ -273,13 +287,6 @@ def _keep_id_token(response: HttpResponse, id_token: str) -> None:
         id_token,
         httponly=True,
         secure=conf.cookie_secure(),
-        samesite="Lax",
+        samesite=conf.cookie_samesite(),
         path="/",
     )
-
-
-def _reverse(name: str) -> str:
-    try:
-        return reverse(f"grantor_django:{name}")
-    except NoReverseMatch:  # pragma: no cover - only when urls are not included
-        return "/"
