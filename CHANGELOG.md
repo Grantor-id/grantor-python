@@ -123,3 +123,7 @@ before there is anything to get wrong.
   Empty.
 - Python 3.10+, Django 4.2 LTS and 5.x.
 - Published by PyPI Trusted Publishing from a tag. No token exists.
+  **Two environments, `pypi-grantor` and `pypi-grantor-django`** — PyPI keys
+  a pending publisher on (owner, repository, workflow, environment) and the
+  project name is not part of that key, so one environment for both is a
+  duplicate registration and the second is refused.
