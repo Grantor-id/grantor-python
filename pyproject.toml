@@ -38,6 +38,10 @@ select = ["E", "F", "I", "UP", "B", "S"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages/grantor/tests", "packages/grantor-django/tests", "tests"]
+# The test project is a real Django project, mounted at a non-default
+# path, so the published quickstart can be extracted from code that runs.
+pythonpath = ["tests"]
+DJANGO_SETTINGS_MODULE = "djangoproject.settings"
 asyncio_mode = "auto"
 # Without this, a live-issuer smoke test runs on every developer's laptop and
 # turns an outage at the issuer into a red gate on unrelated work.

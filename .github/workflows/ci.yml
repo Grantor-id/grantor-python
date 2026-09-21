@@ -52,7 +52,13 @@ jobs:
       - run: uv sync --all-extras
       - name: Pin Django for this cell
         run: uv pip install "django~=${{ matrix.django }}.0"
-      - run: uv run pytest
+      - name: Prove the pin took
+        # `uv run` re-syncs the environment from the lockfile unless told
+        # not to, which silently undoes the line above — the matrix then
+        # tests the same Django twice and reports two green cells. Found by
+        # running it locally and printing the version.
+        run: uv run --no-sync python -c "import django; print(django.get_version())"
+      - run: uv run --no-sync pytest
 
   build:
     # A distribution that does not build is a release that fails after the

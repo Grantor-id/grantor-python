@@ -8,6 +8,29 @@ release; they decouple at `1.0.0`.
 
 ## Unreleased
 
+### `grantor-django`
+
+Sign in with Grantor, link on `sub`, sign out properly.
+
+- `grantor_django.urls` — `/sso/start`, `/sso/callback`, `/sso/logout`,
+  mounted wherever the project likes. **The redirect URI is derived from the
+  URLconf**, so moving the mount point cannot leave a setting disagreeing
+  with it.
+- `GrantorBackend` — links on `sub`; the email fallback is used **exactly
+  once**, **only when `email_verified is True`**, and **only on an account
+  that is not already linked**. Provisioning unknown people is off unless
+  `GRANTOR_CREATE_UNKNOWN_USERS` asks for it.
+- `sub` lives on a model the host project owns, found through
+  `GRANTOR_SUBJECT_FIELD` (`"profile.grantor_sub"` reaches through a
+  relation). The library ships no migration for a table it does not own.
+- **The round-trip secrets ride in a signed, short-TTL cookie, not the
+  session**, so a sign-in begun on one node finishes on another. `SameSite`
+  is `Lax` because the callback is a top-level cross-site redirect.
+- Sign-out drops the local session **first**, then redirects to the issuer
+  with the `id_token_hint`. POST only.
+- A Django system check fails the boot on a missing or malformed setting,
+  reporting every problem at once.
+
 ### `grantor`
 
 The protocol core, with every pure step of the flow as public API rather

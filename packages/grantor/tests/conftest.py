@@ -9,21 +9,14 @@ module.
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 
 import grantor
 import jwt
 import pytest
+from core_support import CLIENT_ID, ISSUER, KID, jwk_for
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jwt.algorithms import RSAAlgorithm
-
-ISSUER = "https://acme.api.grantor.id"
-CLIENT_ID = "acme-web"
-API_AUDIENCE = "https://api.example.com"
-KID = "test-key-1"
-ROTATED_KID = "test-key-2"
 
 
 def _keypair() -> tuple[Any, Any]:
@@ -51,12 +44,6 @@ def signing_key():
 @pytest.fixture(scope="session")
 def rotated_key():
     return _keypair()
-
-
-def jwk_for(public_key: Any, kid: str) -> dict[str, Any]:
-    jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
-    jwk.update({"kid": kid, "use": "sig", "alg": "RS256"})
-    return jwk
 
 
 @pytest.fixture
