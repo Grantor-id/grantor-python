@@ -18,7 +18,7 @@ import grantor
 import httpx
 import jwt
 import pytest
-from conftest import API_AUDIENCE, CLIENT_ID, ISSUER, KID, ROTATED_KID, jwk_for
+from core_support import API_AUDIENCE, CLIENT_ID, ISSUER, KID, ROTATED_KID, jwk_for
 from cryptography.hazmat.primitives import serialization
 from grantor import TokenError
 

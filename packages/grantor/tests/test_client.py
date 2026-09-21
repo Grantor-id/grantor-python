@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 import grantor
 import httpx
 import pytest
-from conftest import CLIENT_ID, ISSUER
+from core_support import CLIENT_ID, ISSUER
 from grantor import GrantorClient, ProtocolError
 
 SECRET = "sup3r-s3cret"  # noqa: S105 - a fixture, and the point of two tests below

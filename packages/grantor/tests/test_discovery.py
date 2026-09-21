@@ -5,7 +5,7 @@ from __future__ import annotations
 import grantor
 import httpx
 import pytest
-from conftest import ISSUER
+from core_support import ISSUER
 from grantor import DiscoveryError
 
 

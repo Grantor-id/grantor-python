@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 import grantor
 import pytest
-from conftest import API_AUDIENCE, CLIENT_ID
+from core_support import API_AUDIENCE, CLIENT_ID
 from grantor import DiscoveryError
 
 
