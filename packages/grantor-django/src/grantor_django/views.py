@@ -16,7 +16,7 @@ import secrets
 from typing import Any
 
 from django.contrib.auth import authenticate, login, logout
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import NoReverseMatch, reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.module_loading import import_string
@@ -62,6 +62,17 @@ def relative_path_only(raw: str | None, fallback: str) -> str:
     if not raw or not raw.startswith("/") or raw.startswith("//") or "\\" in raw:
         return fallback
     return raw
+
+
+def _require_enabled() -> None:
+    """404 while the integration is switched off.
+
+    Not 500 and not a redirect: a route that has not been enabled does not
+    exist yet, and saying so is both the truthful answer and the one that
+    tells a scanner nothing.
+    """
+    if not conf.get("GRANTOR_ENABLED"):
+        raise Http404("the Grantor integration is not enabled")
 
 
 def safe_next(request: HttpRequest, raw: str | None, fallback: str) -> str:
@@ -118,6 +129,7 @@ def establish_session(request: HttpRequest, response: HttpResponse, user: Any, t
 @require_GET
 def start(request: HttpRequest) -> HttpResponse:
     """Send the browser to the issuer, remembering what must come back."""
+    _require_enabled()
     next_url = safe_next(request, request.GET.get("next"), conf.get("GRANTOR_LOGIN_REDIRECT_URL"))
     try:
         authorization = get_client().start_authorization()
@@ -143,6 +155,7 @@ def start(request: HttpRequest) -> HttpResponse:
 @require_GET
 def callback(request: HttpRequest) -> HttpResponse:  # noqa: PLR0911 - one return per refusal
     """Where the issuer's redirect lands."""
+    _require_enabled()
     redirect_error = parse_redirect_error(request.GET)
     if redirect_error:
         return _error_redirect(ERROR_DENIED if redirect_error == "access_denied" else ERROR_ISSUER)

@@ -40,6 +40,13 @@ REQUIRED_SETTINGS = ("GRANTOR_ISSUER",)
 SESSION_LOGIN_SETTINGS = ("GRANTOR_CLIENT_ID", "GRANTOR_CALLBACK_BASE_URL")
 
 _DEFAULTS: dict[str, Any] = {
+    # Deploy the code first, turn it on later. A project rolling Grantor out
+    # behind a flag has the app installed and the URLs mounted before any
+    # client id exists, and refusing to boot until it does would make the
+    # dark deploy impossible — which is the whole point of a dark deploy.
+    # While this is False the sign-in views answer 404, because a route that
+    # is not enabled does not exist rather than existing and erroring.
+    "GRANTOR_ENABLED": True,
     "GRANTOR_CLIENT_SECRET": None,
     "GRANTOR_SCOPE": "openid profile email",
     "GRANTOR_AUTH_METHOD": "client_secret_basic",
@@ -194,11 +201,17 @@ def check_configuration() -> list[str]:
     """
     problems: list[str] = []
 
-    required = list(REQUIRED_SETTINGS)
-    if _session_login_is_mounted():
-        required.extend(SESSION_LOGIN_SETTINGS)
-    if _resource_server_is_configured():
-        required.append("GRANTOR_AUDIENCE")
+    if not get("GRANTOR_ENABLED"):
+        # Nothing is required of a configuration nobody is using yet. What
+        # *is* set is still checked below, so a half-finished rollout still
+        # hears about a malformed value before it is switched on.
+        required: list[str] = []
+    else:
+        required = list(REQUIRED_SETTINGS)
+        if _session_login_is_mounted():
+            required.extend(SESSION_LOGIN_SETTINGS)
+        if _resource_server_is_configured():
+            required.append("GRANTOR_AUDIENCE")
 
     for name in required:
         value = getattr(settings, name, None)

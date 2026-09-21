@@ -83,7 +83,11 @@ Sign in with Grantor, link on `sub`, sign out properly.
   own cookies. `GRANTOR_ERROR_PARAM` keeps the query-parameter name a
   project's front end already reads.
 - A Django system check fails the boot on a missing or malformed setting,
-  reporting every problem at once.
+  reporting every problem at once — and asks only for what this project
+  actually uses, so a resource server is never made to name a callback.
+- `GRANTOR_ENABLED = False` supports a dark deploy: nothing is required of
+  a configuration nobody is using yet, and the sign-in routes answer 404
+  rather than 500. Anything that *is* set is still checked.
 
 ### `grantor`
 

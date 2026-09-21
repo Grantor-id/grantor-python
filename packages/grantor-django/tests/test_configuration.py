@@ -143,3 +143,34 @@ def test_the_transaction_cookie_is_lax_and_not_strict(client, issuer):
     cookie = client.cookies["grantor_txn"]
     assert cookie["samesite"] == "Lax"
     assert cookie["httponly"]
+
+
+def test_a_dark_deploy_boots_without_any_grantor_configuration(settings):
+    """Deploy the code first, turn it on later.
+
+    A project rolling this out behind a flag has the app installed and the
+    URLs mounted before any client id exists. Refusing to boot until one
+    does would make the dark deploy impossible, which is the whole point of
+    a dark deploy.
+    """
+    settings.GRANTOR_ENABLED = False
+    settings.GRANTOR_CLIENT_ID = ""
+    settings.GRANTOR_ISSUER = ""
+
+    assert _grantor_errors() == []
+
+
+def test_a_half_finished_rollout_still_hears_about_a_malformed_value(settings):
+    """Not required is not the same as not checked."""
+    settings.GRANTOR_ENABLED = False
+    settings.GRANTOR_ISSUER = "http://acme.api.grantor.id"
+
+    assert any("https" in e.msg for e in _grantor_errors())
+
+
+def test_the_sign_in_routes_are_absent_while_it_is_off(client, settings):
+    """404, not 500 — a route that is not enabled does not exist yet."""
+    settings.GRANTOR_ENABLED = False
+
+    assert client.get(reverse("grantor_django:start")).status_code == 404
+    assert client.get(reverse("grantor_django:callback")).status_code == 404
