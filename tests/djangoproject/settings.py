@@ -12,6 +12,7 @@ ALLOWED_HOSTS = ["*"]
 USE_TZ = True
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -75,4 +76,14 @@ GRANTOR_AUDIENCE = "https://api.example.com"
 # This API mints its own agent credentials under the same Bearer scheme;
 # they are not Grantor's to refuse.
 GRANTOR_DRF_IGNORE_TOKEN_PREFIXES = ["amt_"]
+# ---------------------------------------------------------------------------
+
+# --- the admin, behind Grantor ---------------------------------------------
+# Note what is NOT here: `django.contrib.auth.backends.ModelBackend` is in
+# AUTHENTICATION_BACKENDS above only because this project also has an
+# ordinary application login. A project whose only surface is the admin
+# leaves it out entirely, and then no password path exists at all.
+GRANTOR_ADMIN_CLIENT_ID = "acme-admin"
+GRANTOR_ADMIN_CLIENT_SECRET = "admin-client-secret"  # noqa: S105
+GRANTOR_ADMIN_ROLE = "superadmin"
 # ---------------------------------------------------------------------------

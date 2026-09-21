@@ -8,6 +8,24 @@ release; they decouple at `1.0.0`.
 
 ## Unreleased
 
+### `grantor-django[admin]`
+
+A Django admin with no local password at all.
+
+- `GrantorAdminSite` — the login view **redirects to the issuer**; Django's
+  password form is replaced, not hidden, because a hidden form is a form
+  somebody finds.
+- `is_staff` / `is_superuser` are set from `GRANTOR_ADMIN_ROLE` on every
+  sign-in, **including to `False`**. A role revoked at the issuer takes
+  effect at the next sign-in, and the local record says so rather than
+  keeping a stale flag.
+- Admin users are created with an unusable password.
+- Signing out of the admin **ends the issuer session too**.
+- A documented break-glass path, `manage.py grantor_break_glass`, behind
+  two deliberate acts: the command hands out a password, and
+  `GRANTOR_ADMIN_BREAK_GLASS = True` decides whether any form will take one.
+  It prints how to close it and what to read in the audit trail afterwards.
+
 ### `grantor-django[drf]`
 
 A DRF API that answers to a Grantor access token.
