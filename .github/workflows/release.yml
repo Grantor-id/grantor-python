@@ -1,0 +1,87 @@
+# Publish `grantor` and `grantor-django` to PyPI.
+#
+# There is no PyPI token here, or on anyone's laptop, or in this repository's
+# secrets. The publish steps authenticate by OIDC (PyPI Trusted Publishing),
+# which means the credential is minted for one workflow run and expires with
+# it. This is the product's own doctrine — no long-lived secrets — applied to
+# its own supply chain.
+#
+# The pending publishers registered on PyPI are keyed on four values, and all
+# four must keep matching this file:
+#
+#     owner        Grantor-id
+#     repository   grantor-python
+#     workflow     release.yml          ← the name of THIS file
+#     environment  pypi                 ← declared on the publish job below
+#
+# Renaming this file, or the environment, breaks the release with an
+# authentication error that looks nothing like its cause.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+
+      - name: The tag must name the version being published
+        # Both packages move in lockstep through 0.x, so one tag describes
+        # both. A tag that disagrees with the metadata publishes a version
+        # nobody can find from the repository, and PyPI will not let it be
+        # replaced afterwards.
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          for pkg in grantor grantor-django; do
+            version="$(uvx --from toml-cli toml get --toml-path "packages/$pkg/pyproject.toml" project.version)"
+            if [ "$version" != "$tag" ]; then
+              echo "::error::tag $GITHUB_REF_NAME names $tag but $pkg is $version" >&2
+              exit 1
+            fi
+          done
+          echo "tag and both packages agree on $tag"
+
+      - run: uv build --package grantor --out-dir dist/grantor
+      - run: uv build --package grantor-django --out-dir dist/grantor-django
+      - run: uvx twine check dist/grantor/* dist/grantor-django/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # The only permission the publish needs, and the reason no secret does.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish grantor
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/grantor/
+
+      - name: Publish grantor-django
+        # Second, and in this order on purpose: `grantor-django` depends on
+        # `grantor~=0.1`, so a consumer who installs it the moment it appears
+        # finds the core already there.
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/grantor-django/

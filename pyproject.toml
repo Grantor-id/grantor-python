@@ -1,0 +1,45 @@
+# The workspace root. It is not itself a distribution — it exists so that
+# `uv sync` resolves both packages against one lockfile and one interpreter,
+# which is the whole reason the two live in one repository.
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+grantor = { workspace = true }
+grantor-django = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "grantor",
+    "grantor-django",
+    "ruff>=0.12",
+    "mypy>=1.14",
+    "pytest>=8.4",
+    "pytest-asyncio>=0.25",
+    "pytest-django>=4.11",
+    "respx>=0.22",
+    "packaging>=24",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["tests/djangoproject/**/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+# S101: pytest is built on `assert`.
+per-file-ignores = { "tests/**" = ["S101"] }
+
+[tool.pytest.ini_options]
+testpaths = ["packages/grantor/tests", "packages/grantor-django/tests", "tests"]
+asyncio_mode = "auto"
+# Without this, a live-issuer smoke test runs on every developer's laptop and
+# turns an outage at the issuer into a red gate on unrelated work.
+markers = ["live: talks to the real issuer; deselected unless -m live"]
+addopts = "-m 'not live'"
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["grantor", "grantor_django"]
+ignore_missing_imports = true
