@@ -1,0 +1,59 @@
+[project]
+name = "grantor-django"
+version = "0.1.0a0"
+description = "Sign in with Grantor from Django — views, an authentication backend, DRF and the admin."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Allure Labs" }]
+keywords = ["django", "oauth2", "oidc", "openid-connect", "sso", "grantor"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = [
+    # Lockstep through 0.x: the two packages are cut from one commit and one
+    # CI run, so a `grantor-django` can never be installed beside a core it
+    # was not tested against. They decouple at 1.0.
+    #
+    # Written out rather than as `grantor~=0.1`, because `~=` excludes
+    # pre-releases: `grantor~=0.1` cannot resolve `grantor 0.1.0a0`, which
+    # is the very core this release is cut with, and
+    # `pip install grantor-django==0.1.0a0` fails on it. A specifier that
+    # names a pre-release admits them. Same lockstep, one that installs.
+    "grantor>=0.1.0a0,<0.2",
+    # Capped at the declared support matrix — 4.2 LTS through 5.x. An
+    # uncapped range would let a fresh install resolve to a Django this
+    # release was never tested against, which is a promise the
+    # classifiers above do not make.
+    "django>=4.2,<6",
+]
+
+[project.optional-dependencies]
+drf = ["djangorestframework>=3.14"]
+admin = []
+
+[project.urls]
+Homepage = "https://grantor.id"
+Documentation = "https://docs.grantor.id"
+Source = "https://github.com/Grantor-id/grantor-python"
+Issues = "https://github.com/Grantor-id/grantor-python/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/grantor_django"]

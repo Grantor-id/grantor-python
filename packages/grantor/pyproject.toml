@@ -1,0 +1,43 @@
+[project]
+name = "grantor"
+version = "0.1.0a0"
+description = "The protocol core of the Grantor OAuth 2.1 / OpenID Connect client — framework-free."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Allure Labs" }]
+keywords = ["oauth2", "oidc", "openid-connect", "pkce", "authentication", "grantor"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration :: Authentication/Directory",
+    "Typing :: Typed",
+]
+dependencies = [
+    # httpx rather than requests, deliberately: the core has a sync and an
+    # async path so that a future `grantor-fastapi` composes these functions
+    # instead of blocking the event loop or reimplementing them.
+    "httpx>=0.27",
+    # PyJWT with cryptography for signature verification. JWKS is fetched
+    # through httpx rather than PyJWKClient's own urllib transport, so the
+    # async path and the sync path share one HTTP story.
+    "pyjwt[crypto]>=2.9",
+]
+
+[project.urls]
+Homepage = "https://grantor.id"
+Documentation = "https://docs.grantor.id"
+Source = "https://github.com/Grantor-id/grantor-python"
+Issues = "https://github.com/Grantor-id/grantor-python/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/grantor"]

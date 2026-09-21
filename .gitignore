@@ -13,3 +13,6 @@ htmlcov/
 .tox/
 .env
 .DS_Store
+uv.lock.bak
+.venv*/
+node_modules/

@@ -1,0 +1,71 @@
+# The gate. Every job here runs the same recipes `just verify` runs locally,
+# so a green laptop and a green pipeline cannot disagree.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: lint, format, types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+
+  test:
+    # The corners of the support matrix, not every cell: the oldest Python
+    # with the LTS Django, and the newest of each. A cell in the middle that
+    # breaks while both corners pass has not happened yet and would be a
+    # Django deprecation, which the newest corner sees first anyway.
+    name: py${{ matrix.python }} · django${{ matrix.django }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.10"
+            django: "4.2"
+          - python: "3.13"
+            django: "5.2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - run: uv sync --all-extras
+      - name: Pin Django for this cell
+        run: uv pip install "django~=${{ matrix.django }}.0"
+      - run: uv run pytest
+
+  build:
+    # A distribution that does not build is a release that fails after the
+    # tag is cut, which is the expensive moment to find out.
+    name: build both distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv build --package grantor --out-dir dist/grantor
+      - run: uv build --package grantor-django --out-dir dist/grantor-django
+      - name: Check the metadata PyPI will render
+        run: |
+          uvx twine check dist/grantor/* dist/grantor-django/*
