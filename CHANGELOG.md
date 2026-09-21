@@ -43,8 +43,10 @@ A DRF API that answers to a Grantor access token.
 - A caller needs no local record: the default principal is a `GrantorUser`
   built from the claims. `GRANTOR_DRF_USER_RESOLVER` maps onto a local row
   instead, and `grantor_django.drf.resolve_local_user` is a ready-made one.
-- `GRANTOR_DRF_IGNORE_TOKEN_PREFIXES` leaves another authenticator's
-  credentials alone rather than 401-ing them before it sees them.
+- A token that is not shaped like a JWT is **declined locally, before any
+  network call** — another authenticator's opaque credential must not
+  become a 503 about the identity provider.
+  `GRANTOR_DRF_IGNORE_TOKEN_PREFIXES` declines by prefix as well.
 - An unreachable issuer answers **503, not 401** — it is not the caller's
   fault and re-authenticating will not help.
 - `GRANTOR_HTTP_CLIENT_FACTORY` supplies a configured `httpx.Client` — a

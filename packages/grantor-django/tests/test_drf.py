@@ -260,3 +260,40 @@ else:
     message = result.stdout.strip()
     assert "grantor-django[drf]" in message
     assert "pip install" in message
+
+
+def test_an_opaque_token_is_declined_without_a_network_call(client, settings, monkeypatch):
+    """Another authenticator's credential must not become a 503.
+
+    Anything that is not shaped like a JWT was never minted by this issuer,
+    so it is declined locally. Verifying it would fetch discovery, fail,
+    and report the identity provider as unavailable — an outage invented
+    out of somebody else's perfectly good token.
+
+    Proven by making any discovery attempt an error: if one happens, this
+    test fails rather than passing for the wrong reason.
+    """
+
+    def explode(*args, **kwargs):
+        raise AssertionError("the issuer must not be contacted for a non-JWT")
+
+    monkeypatch.setattr("grantor_django.drf.discover", explode)
+
+    response = client.get(
+        reverse("whoami"), HTTP_AUTHORIZATION="Bearer mt_an-opaque-machine-credential"
+    )
+    assert response.status_code == 401
+    assert response["WWW-Authenticate"].startswith("Bearer ")
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    ["not-a-jwt", "only.two", "a.b.c.d", "..", "eyJhbGciOiJIUzI1NiJ9..sig"],
+)
+def test_nothing_malformed_reaches_the_issuer(client, malformed, monkeypatch):
+    def explode(*args, **kwargs):
+        raise AssertionError("the issuer must not be contacted")
+
+    monkeypatch.setattr("grantor_django.drf.discover", explode)
+    response = client.get(reverse("whoami"), HTTP_AUTHORIZATION=f"Bearer {malformed}")
+    assert response.status_code == 401
