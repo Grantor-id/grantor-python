@@ -256,6 +256,11 @@ class GrantorAdminSite(AdminSite):
                 code_verifier=txn.code_verifier,
             )
         except ProtocolError as exc:
+            # Logged as well as raised. Django renders PermissionDenied as a
+            # bare 403 page with no detail — correct for a browser, useless
+            # for whoever has to work out why the admin stopped letting
+            # people in. The code is safe to log and is the whole diagnosis.
+            logger.warning("grantor admin: token exchange refused: %s", exc.code)
             raise PermissionDenied(
                 f"the issuer refused the authorization code: {exc.code}"
             ) from exc
@@ -267,6 +272,7 @@ class GrantorAdminSite(AdminSite):
         try:
             claims = client.verify_id_token(tokens.id_token, nonce=txn.nonce)
         except TokenError as exc:
+            logger.warning("grantor admin: id token rejected: %s", exc.reason)
             raise PermissionDenied(f"the ID token was rejected: {exc.reason}") from exc
 
         user = user_for_claims(claims)

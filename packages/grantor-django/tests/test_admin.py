@@ -189,3 +189,20 @@ def test_a_standing_account_still_has_its_flags_corrected(client, admin_issuer):
     user = get_user_model().objects.get(username=SUB)
     assert not user.is_staff
     assert not user.is_superuser
+
+
+def test_a_refusal_at_the_token_endpoint_is_logged_not_just_raised(client, admin_issuer, caplog):
+    """A bare 403 page is correct for a browser and useless for an operator.
+
+    Django renders PermissionDenied with no detail at all, so without this
+    line an admin that has stopped letting people in leaves nothing behind
+    saying why. The normalized code is safe to log and is the diagnosis.
+    """
+    admin_issuer["token_status"] = 400
+    admin_issuer["token_body"] = {"error": {"code": "invalid_redirect_uri"}}
+
+    with caplog.at_level("WARNING", logger="grantor_django.admin"):
+        response, _ = _sign_in(client, admin_issuer, ["superadmin"])
+
+    assert response.status_code == 403
+    assert "invalid_redirect_uri" in caplog.text
