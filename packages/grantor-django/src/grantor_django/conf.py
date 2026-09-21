@@ -55,12 +55,30 @@ _DEFAULTS: dict[str, Any] = {
     # wants exactly that — but a library that does it unasked would create
     # accounts in projects whose signup policy lives somewhere else.
     "GRANTOR_CREATE_UNKNOWN_USERS": False,
+    # When the browser application lives on a different origin from this
+    # Django project — an SPA talking to an API, which is one of the two
+    # shapes Django projects actually come in — set this to its base URL.
+    # `next` is then a path relative to it, and the safety check becomes
+    # "a path, and only a path" rather than "same host as this request".
+    "GRANTOR_FRONTEND_BASE_URL": None,
     "GRANTOR_LOGIN_REDIRECT_URL": "/",
     "GRANTOR_LOGOUT_REDIRECT_URL": "/",
     # Where a failed sign-in lands, with ``?grantor_error=<code>``. The code
     # is from the normalized vocabulary and is safe to show; nothing about
     # claims or tokens travels with it.
     "GRANTOR_ERROR_REDIRECT_URL": None,
+    # The query parameter a failure arrives under. Configurable because a
+    # project adopting this library already has a front end reading some
+    # name, and making it change one is a worse trade than making this a
+    # setting.
+    "GRANTOR_ERROR_PARAM": "grantor_error",
+    # How a signed-in person is remembered. Default: Django's session.
+    # A project that issues its own cookies — a JWT pair for an SPA, say —
+    # points this at a callable `(request, response, user, tokens)` and
+    # keeps its own scheme. Sessions are not the only way to be signed in,
+    # and a library that insisted on them could not be adopted by half the
+    # projects that want it.
+    "GRANTOR_ESTABLISH_SESSION": None,
     "GRANTOR_POST_LOGOUT_REDIRECT_URI": None,
     "GRANTOR_TXN_COOKIE_NAME": "grantor_txn",
     "GRANTOR_TXN_MAX_AGE": 600,

@@ -74,6 +74,14 @@ Sign in with Grantor, link on `sub`, sign out properly.
   is `Lax` because the callback is a top-level cross-site redirect.
 - Sign-out drops the local session **first**, then redirects to the issuer
   with the `id_token_hint`. POST only.
+- Serves the **other** Django shape too: a browser application on its own
+  origin, with a session that is not Django's.
+  `GRANTOR_FRONTEND_BASE_URL` makes `next` a path resolved against it — a
+  narrower promise than "same host", since no value can name a host at all.
+  `GRANTOR_ESTABLISH_SESSION` replaces `login()` with a project's own
+  scheme, receiving the response and the issuer's tokens so it can set its
+  own cookies. `GRANTOR_ERROR_PARAM` keeps the query-parameter name a
+  project's front end already reads.
 - A Django system check fails the boot on a missing or malformed setting,
   reporting every problem at once.
 

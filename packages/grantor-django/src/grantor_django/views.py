@@ -19,6 +19,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import NoReverseMatch, reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.module_loading import import_string
 from django.views.decorators.http import require_GET, require_POST
 from grantor import (
     DiscoveryError,
@@ -31,7 +32,14 @@ from grantor import (
 from . import conf, transaction
 from .client import get_client
 
-__all__ = ["start", "callback", "sign_out", "safe_next"]
+__all__ = [
+    "start",
+    "callback",
+    "sign_out",
+    "safe_next",
+    "relative_path_only",
+    "establish_session",
+]
 
 logger = logging.getLogger("grantor_django")
 
@@ -43,13 +51,35 @@ ERROR_ISSUER = "issuer_error"
 ERROR_NO_ACCOUNT = "account_not_found"
 
 
+def relative_path_only(raw: str | None, fallback: str) -> str:
+    """A path on some site, and nothing that could name a different one.
+
+    Must start with ``/``, must not start with ``//`` (that is
+    scheme-relative and goes wherever it likes), and must contain no
+    backslash — browsers normalize ``\\`` to ``/``, so a check that only
+    looks for ``//`` misses ``/\\evil.example.com``.
+    """
+    if not raw or not raw.startswith("/") or raw.startswith("//") or "\\" in raw:
+        return fallback
+    return raw
+
+
 def safe_next(request: HttpRequest, raw: str | None, fallback: str) -> str:
-    """Only a destination on this site.
+    """Where this person may be sent after signing in.
 
     An unchecked ``?next=`` is an open redirect, and an open redirect on a
     login endpoint is a phishing page hosted on your own domain — the URL
     the person checks is genuinely yours right up to the moment it is not.
+
+    Two shapes. Without ``GRANTOR_FRONTEND_BASE_URL`` the destination must
+    be on this host. With it, the browser application is somewhere else on
+    purpose, so the destination is a **path** resolved against that one base
+    — which is a narrower promise than "same host", not a looser one: no
+    value of ``next`` can name a host at all.
     """
+    base = conf.get("GRANTOR_FRONTEND_BASE_URL")
+    if base:
+        return base.rstrip("/") + relative_path_only(raw, fallback)
     if raw and url_has_allowed_host_and_scheme(
         raw, allowed_hosts={request.get_host()}, require_https=request.is_secure()
     ):
@@ -59,10 +89,30 @@ def safe_next(request: HttpRequest, raw: str | None, fallback: str) -> str:
 
 def _error_redirect(code: str) -> HttpResponse:
     target = conf.get("GRANTOR_ERROR_REDIRECT_URL") or conf.get("GRANTOR_LOGIN_REDIRECT_URL")
+    base = conf.get("GRANTOR_FRONTEND_BASE_URL")
+    if base:
+        target = base.rstrip("/") + relative_path_only(target, "/")
     separator = "&" if "?" in target else "?"
-    response = HttpResponseRedirect(f"{target}{separator}grantor_error={code}")
+    param = conf.get("GRANTOR_ERROR_PARAM")
+    response = HttpResponseRedirect(f"{target}{separator}{param}={code}")
     transaction.clear(response)
     return response
+
+
+def establish_session(request: HttpRequest, response: HttpResponse, user: Any, tokens: Any) -> None:
+    """Remember that this person is signed in.
+
+    Django's session by default. ``GRANTOR_ESTABLISH_SESSION`` replaces it
+    for a project with its own scheme — a JWT cookie pair for an SPA, say.
+    It receives the response as well as the request, so a replacement can
+    set cookies on the way out, and the issuer's tokens, so it can keep
+    whichever of them it needs.
+    """
+    path = conf.get("GRANTOR_ESTABLISH_SESSION")
+    if path:
+        import_string(path)(request, response, user, tokens)
+        return
+    login(request, user)
 
 
 @require_GET
@@ -141,11 +191,10 @@ def callback(request: HttpRequest) -> HttpResponse:  # noqa: PLR0911 - one retur
         logger.info("grantor: no local account for sub %s", claims.get("sub"))
         return _error_redirect(ERROR_NO_ACCOUNT)
 
-    login(request, user)
-
     response = HttpResponseRedirect(txn.next_url)
     transaction.clear(response)
     _keep_id_token(response, tokens.id_token)
+    establish_session(request, response, user, tokens)
     return response
 
 
