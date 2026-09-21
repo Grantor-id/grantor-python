@@ -25,9 +25,36 @@ from django.http import HttpRequest, HttpResponse
 
 from . import conf
 
-__all__ = ["Transaction", "InvalidTransaction", "issue", "read", "clear", "SALT"]
+__all__ = [
+    "Transaction",
+    "InvalidTransaction",
+    "issue",
+    "read",
+    "clear",
+    "cookie_path",
+    "SALT",
+]
 
 SALT = "grantor_django.sso.txn"
+
+
+def cookie_path() -> str:
+    """Scope the cookie to where these views are actually mounted.
+
+    Derived rather than configured, and derived rather than left at ``/``:
+    this cookie carries a PKCE verifier for ten minutes, and there is no
+    reason for it to ride on every request to the rest of the site. A
+    project that mounts the library at ``oauth/`` gets ``/oauth/sso``
+    without being asked.
+    """
+    from django.urls import reverse
+
+    try:
+        callback = reverse("grantor_django:callback")
+    except Exception:
+        return "/"
+    parent = callback.rsplit("/", 1)[0]
+    return parent or "/"
 
 
 class InvalidTransaction(Exception):
@@ -57,7 +84,7 @@ def issue(response: HttpResponse, txn: Transaction) -> None:
         httponly=True,
         secure=conf.cookie_secure(),
         samesite="Lax",
-        path="/",
+        path=cookie_path(),
     )
 
 
@@ -80,4 +107,4 @@ def read(request: HttpRequest) -> Transaction:
 
 def clear(response: HttpResponse) -> None:
     """Delete the cookie. A transaction is single-use, including on failure."""
-    response.delete_cookie(conf.get("GRANTOR_TXN_COOKIE_NAME"), path="/")
+    response.delete_cookie(conf.get("GRANTOR_TXN_COOKIE_NAME"), path=cookie_path())

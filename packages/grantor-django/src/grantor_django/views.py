@@ -49,6 +49,7 @@ ERROR_DENIED = "denied"
 ERROR_EXPIRED = "expired"
 ERROR_ISSUER = "issuer_error"
 ERROR_NO_ACCOUNT = "account_not_found"
+ERROR_EXCHANGE = "exchange_failed"
 
 
 def relative_path_only(raw: str | None, fallback: str) -> str:
@@ -130,7 +131,11 @@ def establish_session(request: HttpRequest, response: HttpResponse, user: Any, t
 def start(request: HttpRequest) -> HttpResponse:
     """Send the browser to the issuer, remembering what must come back."""
     _require_enabled()
-    next_url = safe_next(request, request.GET.get("next"), conf.get("GRANTOR_LOGIN_REDIRECT_URL"))
+    next_url = safe_next(
+        request,
+        request.GET.get(conf.get("GRANTOR_NEXT_PARAM")),
+        conf.get("GRANTOR_LOGIN_REDIRECT_URL"),
+    )
     try:
         authorization = get_client().start_authorization()
     except (DiscoveryError, ProtocolError):
@@ -174,8 +179,12 @@ def callback(request: HttpRequest) -> HttpResponse:  # noqa: PLR0911 - one retur
     try:
         tokens = client.exchange_code(request.GET.get("code", ""), code_verifier=txn.code_verifier)
     except ProtocolError as exc:
+        # The issuer's specific code goes to the log, not the query string.
+        # What lands in the URL is read by a front end that has to render
+        # copy for it, and an unbounded vocabulary cannot be rendered — so
+        # the browser gets one stable word and the operator gets the detail.
         logger.warning("grantor: token exchange refused: %s", exc.code)
-        return _error_redirect(exc.code)
+        return _error_redirect(ERROR_EXCHANGE)
     except GrantorError:
         return _error_redirect(ERROR_ISSUER)
 

@@ -79,6 +79,10 @@ _DEFAULTS: dict[str, Any] = {
     # name, and making it change one is a worse trade than making this a
     # setting.
     "GRANTOR_ERROR_PARAM": "grantor_error",
+    # The query parameter `start` reads a destination from. Same reasoning
+    # as the error parameter: an adopter's front end already builds this
+    # URL, and making them change it is a worse trade than a setting.
+    "GRANTOR_NEXT_PARAM": "next",
     # How a signed-in person is remembered. Default: Django's session.
     # A project that issues its own cookies — a JWT pair for an SPA, say —
     # points this at a callable `(request, response, user, tokens)` and

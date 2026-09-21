@@ -174,3 +174,34 @@ def test_the_sign_in_routes_are_absent_while_it_is_off(client, settings):
 
     assert client.get(reverse("grantor_django:start")).status_code == 404
     assert client.get(reverse("grantor_django:callback")).status_code == 404
+
+
+def test_the_transaction_cookie_is_scoped_to_where_the_views_are_mounted(client, issuer):
+    """It carries a PKCE verifier. It has no business on every request.
+
+    This project mounts the library at `identity/`, so the cookie belongs
+    to `/identity/sso` — derived from the URLconf rather than configured,
+    and rather than left at `/`.
+    """
+    client.get(reverse("grantor_django:start"))
+    assert client.cookies["grantor_txn"]["path"] == "/identity/sso"
+
+
+def test_the_destination_parameter_can_be_renamed(client, issuer, settings, local_user):
+    """An adopter's front end already builds this URL."""
+    from urllib.parse import parse_qs, urlparse
+
+    settings.GRANTOR_NEXT_PARAM = "redirectTo"
+    start = client.get(reverse("grantor_django:start"), {"redirectTo": "/inbox"})
+    params = {k: v[0] for k, v in parse_qs(urlparse(start["Location"]).query).items()}
+    issuer["echo_nonce"] = params["nonce"]
+
+    from djangoproject.models import Profile
+
+    Profile.objects.filter(user=local_user).update(
+        grantor_sub="0d9b1a7e-1a62-4a0e-9b7a-1f0f2c3d4e5f"
+    )
+    response = client.get(
+        reverse("grantor_django:callback"), {"code": "c", "state": params["state"]}
+    )
+    assert response["Location"] == "/inbox"

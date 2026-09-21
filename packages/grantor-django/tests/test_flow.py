@@ -141,12 +141,12 @@ def test_a_tampered_transaction_cookie_is_refused(client, issuer):
     assert response["Location"].endswith("grantor_error=expired")
 
 
-def test_a_replayed_code_is_refused(client, issuer, local_user):
+def test_a_replayed_code_is_refused(client, issuer, local_user, caplog):
     """Codes are single-use, and presenting one twice revokes its tokens.
 
-    The issuer answers `invalid_grant`; what matters here is that the code
-    reaches the person as itself rather than as a traceback, and that the
-    second attempt does not sign anybody in.
+    The person gets one stable word — a front end has to render copy for
+    whatever lands in that URL, and the issuer's vocabulary is unbounded.
+    The issuer's actual code goes to the log, where the operator is.
     """
     Profile.objects.filter(user=local_user).update(grantor_sub=SUB)
     _, first = _authorize(client, issuer)
@@ -154,9 +154,11 @@ def test_a_replayed_code_is_refused(client, issuer, local_user):
 
     client.logout()
     _, second = _authorize(client, issuer)
-    response = _callback(client, state=second["state"])
+    with caplog.at_level("WARNING", logger="grantor_django"):
+        response = _callback(client, state=second["state"])
 
-    assert response["Location"].endswith("grantor_error=invalid_grant")
+    assert response["Location"].endswith("grantor_error=exchange_failed")
+    assert "invalid_grant" in caplog.text
     assert "_auth_user_id" not in client.session
 
 
