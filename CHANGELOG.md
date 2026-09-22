@@ -8,6 +8,33 @@ release; they decouple at `1.0.0`.
 
 ## Unreleased
 
+### Fixed
+
+- **The soft-delete fix from `0.1.0a0` was opt-in, so by default it fixed
+  nothing.** `GRANTOR_USER_QUERYSET` defaulted to
+  `User._default_manager.all()` — exactly what the join already read. A
+  project that installed the release, read "fixed", and configured nothing
+  was still exposed, with a green suite, because no test ran without the
+  setting. Found by probing the published wheel rather than reading this
+  file.
+
+  **The safe route is now the default.** When `GRANTOR_SUBJECT_FIELD` names
+  a related field, lookups go through **that model's own default manager**,
+  which is what every hand-rolled implementation did before this library
+  existed. A project with soft-deleted rows is correct without configuring
+  anything. `GRANTOR_USER_QUERYSET` still overrides, for a project whose
+  answer is something else — and a new system check (`W001`) says so at
+  boot when it does, because overriding is now the one way left to
+  reintroduce the defect.
+
+  The email bootstrap took the same route and had the same hole: a deleted
+  profile has no `sub`, so it read as unlinked and was claimable by anybody
+  who could prove the address.
+
+## 0.1.0a0 — 2026-09-21
+
+First release. Claims the names and proves the release path.
+
 ### Fixed — what two real consumers found
 
 Every one of these was invisible from inside the library and obvious from

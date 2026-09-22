@@ -20,6 +20,7 @@ from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
+from django.core.exceptions import FieldDoesNotExist
 from django.db import IntegrityError, transaction
 from django.utils.module_loading import import_string
 
@@ -33,22 +34,15 @@ logger = logging.getLogger("grantor_django")
 def _user_queryset():
     """The set of people this project considers real.
 
-    ``_default_manager`` is the wrong answer on its own, and the reason is
-    not obvious: ``find_by_subject`` filters across a relation, and **a
-    related-field join reads the related table directly**. The related
-    model's own manager never runs, so a project whose `Profile` manager
-    excludes soft-deleted rows has those rows silently back in scope here.
-
-    That is not a tidiness problem. A soft-deleted profile that still
-    authenticates is exactly the "attach a person to the wrong account"
-    failure the whole `sub` rule exists to prevent — and with a conditional
-    unique index on live rows only, the same `sub` can be linked to a second
-    live account while the deleted one goes on signing in. Two accounts, one
-    subject, both real.
+    This is the **user-model** half of a lookup, and on its own it is not
+    the guard. When ``sub`` lives behind a relation, the row that decides
+    the match is in the related table, and ``_users_whose_subject`` is what
+    asks that model's own manager for it — see there for why.
 
     ``GRANTOR_USER_QUERYSET`` names a callable returning the queryset to
-    use, so a project states its own answer once and every lookup here
-    honours it.
+    use, for a project whose answer is not its default manager. Setting it
+    replaces the related-model route entirely, so it must exclude the same
+    rows that route would have; the ``W001`` system check says so at boot.
     """
     path = conf.get("GRANTOR_USER_QUERYSET")
     if path:
@@ -73,6 +67,54 @@ def _set_subject(user: Any, sub: str) -> Any:
     return target
 
 
+def _subject_relation() -> Any | None:
+    """The relation ``GRANTOR_SUBJECT_FIELD`` reaches through, or ``None``.
+
+    ``None`` when ``sub`` lives on the user model itself, in which case
+    ``_default_manager`` already is the project's answer and there is
+    nothing to route around.
+    """
+    related, _ = conf.subject_field()
+    if not related:
+        return None
+    try:
+        return get_user_model()._meta.get_field(related)
+    except FieldDoesNotExist:
+        # A malformed setting is the system check's problem, not a lookup's.
+        return None
+
+
+def _users_whose_subject(value: str) -> Any | None:
+    """Users whose subject row matches, found through the related model's
+    **own** manager. ``None`` when that route does not apply.
+
+    This is the safe default, and it is the whole of the fix. A
+    related-field join *from* the user model reads the related table
+    directly: the related model's manager never runs, so a project whose
+    `Profile` manager excludes soft-deleted rows has those rows silently
+    back in scope. Asking that manager instead is what every hand-rolled
+    implementation did before this library existed, and the extraction lost
+    it.
+
+    Returns ``None`` — meaning "fall back to the plain join" — in two
+    cases, both deliberate:
+
+    * ``sub`` is on the user model, so there is no second manager to honour.
+    * ``GRANTOR_USER_QUERYSET`` is set, so the project has stated its own
+      answer and it wins. That is what the setting is for, and overriding a
+      stated answer with an inferred one would be worse than either.
+    """
+    if conf.get("GRANTOR_USER_QUERYSET"):
+        return None
+    rel = _subject_relation()
+    if rel is None:
+        return None
+    _, field = conf.subject_field()
+    return rel.related_model._default_manager.filter(**{field: value}).values_list(
+        rel.field.attname, flat=True
+    )
+
+
 def _lookup(prefix: str) -> str:
     related, field = conf.subject_field()
     return f"{related}__{field}" if related else field
@@ -81,6 +123,9 @@ def _lookup(prefix: str) -> str:
 def find_by_subject(sub: str) -> Any | None:
     if not sub:
         return None
+    holders = _users_whose_subject(sub)
+    if holders is not None:
+        return _user_queryset().filter(pk__in=holders).first()
     return _user_queryset().filter(**{_lookup("sub"): sub}).first()
 
 
@@ -99,8 +144,15 @@ def link_by_verified_email(claims: Mapping[str, Any], sub: str) -> Any | None:
     if not email or claims.get("email_verified") is not True:
         return None
 
-    lookup = _lookup("sub")
-    candidate = _user_queryset().filter(email__iexact=email).filter(**{lookup: ""}).first()
+    unlinked = _users_whose_subject("")
+    if unlinked is not None:
+        # Same reasoning as `find_by_subject`: an unlinked *and live* row.
+        # Without this, a soft-deleted profile with no `sub` was claimable
+        # by anybody who could prove that email address.
+        candidate = _user_queryset().filter(email__iexact=email, pk__in=unlinked).first()
+    else:
+        lookup = _lookup("sub")
+        candidate = _user_queryset().filter(email__iexact=email).filter(**{lookup: ""}).first()
     if candidate is None:
         return None
 

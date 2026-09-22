@@ -248,3 +248,26 @@ def test_the_destination_parameter_can_be_renamed(client, issuer, settings, loca
         reverse("grantor_django:callback"), {"code": "c", "state": params["state"]}
     )
     assert response["Location"] == "/inbox"
+
+
+def test_the_check_warns_when_an_explicit_queryset_replaces_the_safe_default(settings):
+    """W001. The one remaining way to reintroduce the defect is to override
+    the route that fixes it, so that override says so at boot."""
+    from grantor_django.apps import _check_subject_queryset
+
+    settings.GRANTOR_USER_QUERYSET = "djangoproject.querysets.live_users"
+
+    warnings = _check_subject_queryset(None)
+
+    assert [w.id for w in warnings] == ["grantor_django.W001"]
+    assert "LiveProfileManager" in warnings[0].msg
+
+
+def test_the_check_is_quiet_when_nothing_overrides_it(settings):
+    """Silence is the normal case, and a check that fires on the normal case
+    is a check people learn to ignore."""
+    from grantor_django.apps import _check_subject_queryset
+
+    settings.GRANTOR_USER_QUERYSET = ""
+
+    assert _check_subject_queryset(None) == []
