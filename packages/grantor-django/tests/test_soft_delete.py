@@ -138,3 +138,28 @@ def test_by_default_a_deleted_row_does_not_leave_a_second_live_account(
     Profile.all_objects.create(user=successor, grantor_sub=SUB)
 
     assert _authenticate() == successor
+
+
+def test_the_default_route_is_only_as_safe_as_the_default_manager(local_user):
+    """Why `W002` exists, demonstrated rather than asserted.
+
+    The safe default resolves through the subject model's *default*
+    manager, and Django takes the first declared manager as the default. A
+    project that declares its unfiltered escape hatch first gets lookups
+    that read every row — the `0.1.0a0` behaviour, with no setting to
+    blame. The check warns about this; this test is what the check is
+    warning about.
+    """
+    meta = Profile._meta
+    meta.default_manager_name = "all_objects"
+    meta.__dict__.pop("default_manager", None)
+    try:
+        Profile.all_objects.filter(user=local_user).update(
+            grantor_sub=SUB, deleted_at=timezone.now()
+        )
+
+        # Signed in, deleted, and nothing in the library can tell.
+        assert _authenticate() == local_user
+    finally:
+        meta.default_manager_name = None
+        meta.__dict__.pop("default_manager", None)

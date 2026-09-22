@@ -8,6 +8,27 @@ release; they decouple at `1.0.0`.
 
 ## Unreleased
 
+### Added
+
+- **A check for the one thing the safe default cannot enforce
+  (`W002`).** `0.1.0` resolves `sub` through the subject model's
+  **default** manager, and Django takes whichever manager is declared
+  first. A project that declares its unfiltered escape hatch first —
+
+      all_objects = models.Manager()      # declared first: the default
+      objects = SoftDeleteManager()
+
+  — gets lookups that read every row, which is the `0.1.0a0` behaviour
+  with no setting to blame and nothing in the code to notice. Whoever
+  writes the base model is making a security decision without being told
+  it is one. The check fires only on that shape: the default manager is
+  plain and some other manager on the model is not.
+
+  Found by the second consumer reading `0.1.0`'s fix rather than trusting
+  it, which is the same way the fix it completes was found.
+
+## 0.1.0 — 2026-09-22
+
 ### Fixed
 
 - **The soft-delete fix from `0.1.0a0` was opt-in, so by default it fixed
@@ -30,6 +51,11 @@ release; they decouple at `1.0.0`.
   The email bootstrap took the same route and had the same hole: a deleted
   profile has no `sub`, so it read as unlinked and was claimable by anybody
   who could prove the address.
+
+  **On urgency, measured rather than assumed:** the only consumer with a
+  soft-deleting `Profile` had **zero** soft-deleted rows carrying a `sub`.
+  Nobody was ever exposed. The severity was real; the urgency was lower,
+  and the fix is for the next project rather than the last one.
 
 ## 0.1.0a0 — 2026-09-21
 
