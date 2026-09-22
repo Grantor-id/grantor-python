@@ -271,3 +271,60 @@ def test_the_check_is_quiet_when_nothing_overrides_it(settings):
     settings.GRANTOR_USER_QUERYSET = ""
 
     assert _check_subject_queryset(None) == []
+
+
+# ── W002: the default route is only safe if the default manager is ────────
+#
+# `_default_manager` is whichever manager is declared first. The test
+# project declares the filtering one first, which is the safe order — so
+# these tests invert exactly what the check reads, `default_manager_name`,
+# rather than adding a second model. The declaration order *is* the
+# mechanism, and this is the mechanism under test.
+
+
+@pytest.fixture
+def unfiltered_default():
+    """Make `Profile`'s plain manager the default, as a project that
+    declared `all_objects` first would have."""
+    from djangoproject.models import Profile
+
+    meta = Profile._meta
+    meta.default_manager_name = "all_objects"
+    meta.__dict__.pop("default_manager", None)
+    yield
+    meta.default_manager_name = None
+    meta.__dict__.pop("default_manager", None)
+
+
+def test_the_check_warns_when_the_filtering_manager_is_not_the_default(
+    settings, unfiltered_default
+):
+    from djangoproject.models import Profile
+    from grantor_django.apps import _check_subject_manager
+
+    settings.GRANTOR_USER_QUERYSET = ""
+    assert type(Profile._default_manager).__name__ == "Manager"
+
+    warnings = _check_subject_manager(None)
+
+    assert [w.id for w in warnings] == ["grantor_django.W002"]
+    assert "LiveProfileManager" in warnings[0].msg
+
+
+def test_the_check_is_quiet_when_the_filtering_manager_is_the_default(settings):
+    """The test project's own order, which is the safe one."""
+    from grantor_django.apps import _check_subject_manager
+
+    settings.GRANTOR_USER_QUERYSET = ""
+
+    assert _check_subject_manager(None) == []
+
+
+def test_an_explicit_queryset_silences_it(settings, unfiltered_default):
+    """W001 already covers a stated answer; two warnings for one decision
+    is how a check becomes noise."""
+    from grantor_django.apps import _check_subject_manager
+
+    settings.GRANTOR_USER_QUERYSET = "djangoproject.querysets.live_users"
+
+    assert _check_subject_manager(None) == []
