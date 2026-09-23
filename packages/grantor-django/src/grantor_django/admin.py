@@ -100,6 +100,18 @@ def user_for_claims(claims: dict[str, Any]) -> Any:
     username_field = getattr(User, "USERNAME_FIELD", "username")
     user = User._default_manager.filter(**{username_field: claims["sub"]}).first()
 
+    if user is not None and user.has_usable_password():
+        # Every account this admin creates has no usable password — that is
+        # what `[admin]` is. A row with one was made by some other path, and
+        # granting it staff rights would hand the admin to whoever holds that
+        # password. Leave it exactly as it is; an operator decides what it is.
+        logger.warning(
+            "grantor admin: refused sub %s — a local account with a usable password "
+            "already holds that username",
+            claims.get("sub"),
+        )
+        raise PermissionDenied("this account is managed outside the admin sign-in")
+
     if user is None:
         # A person being refused leaves no record behind. Creating one would
         # let anybody who can reach the issuer populate this table, and a row

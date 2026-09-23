@@ -247,3 +247,18 @@ def test_an_on_site_next_still_works(client, admin_issuer):
     )
 
     assert response["Location"] == "/admin/auth/user/"
+
+
+def test_an_account_with_its_own_password_is_not_taken_over_by_admin_sign_in(client, admin_issuer):
+    """The admin only ever manages accounts it created: those have no usable
+    password. A row that has one was made by some other path, and granting
+    it staff rights would give that password the admin as well."""
+    local = get_user_model().objects.create_user(username=SUB, password="a local password 1")
+
+    response, _ = _sign_in(client, admin_issuer, ["superadmin"])
+
+    assert response.status_code == 403
+    local.refresh_from_db()
+    assert not local.is_staff
+    assert not local.is_superuser
+    assert local.check_password("a local password 1")

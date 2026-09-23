@@ -6,6 +6,16 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
+## Unreleased
+
+### Changed
+
+- **The admin sign-in manages only the accounts it creates.** Those never
+  have a usable password. An existing account that does have one is left
+  untouched, and signing in to the admin as it is refused with a 403 and a
+  log line. It is an account some other part of the project manages, and
+  an operator should decide what it is.
+
 ## 0.1.2 — 2026-09-22
 
 ### Added
