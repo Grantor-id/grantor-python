@@ -23,7 +23,7 @@ from __future__ import annotations
 
 __all__ = ["__version__", "default_app_config"]
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 # Django ≥3.2 discovers AppConfig automatically; named here for readers.
 default_app_config = "grantor_django.apps.GrantorDjangoConfig"

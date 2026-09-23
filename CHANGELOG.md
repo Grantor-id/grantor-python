@@ -6,9 +6,11 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
-## Unreleased
+## 0.1.3 — 2026-09-23
 
 ### Changed
+
+- `grantor-django` requires `grantor>=0.1.3`.
 
 - **The admin sign-in manages only the accounts it creates.** Those never
   have a usable password. An existing account that does have one is left
