@@ -54,6 +54,8 @@ LEEWAY_SECONDS = 30
 # default, and is what `GRANTOR_JWKS_CACHE_SECONDS` sets on the Django side
 # — the name always said JWKS; for a while it only bounded discovery.
 DEFAULT_JWKS_TTL_SECONDS = 3600.0
+#: How often an unknown ``kid`` may send a fresh key set back to the issuer.
+UNKNOWN_KID_REFETCH_SECONDS = 30.0
 
 ID_TOKEN_REQUIRED_CLAIMS = ("exp", "iat", "iss", "aud", "sub")
 ACCESS_TOKEN_REQUIRED_CLAIMS = ("exp", "iat", "iss", "aud", "sub")
@@ -78,8 +80,14 @@ class JwksCache:
     refetches **once**, and a key still unknown after that is a rejection.
 
     *Refetching on every miss, with no ceiling* turns a stream of junk
-    tokens into a request amplifier pointed at the issuer. Hence once, not
-    per-attempt.
+    tokens into a request amplifier pointed at the issuer. "Once per miss"
+    is not a ceiling when every junk token names a different ``kid``, so
+    refetches caused by an unknown ``kid`` on a *fresh* set share one window:
+    at most one per ``refetch_interval`` seconds. The first is always
+    allowed, which is what keeps rotation in immediate; a genuinely new key
+    arriving inside a window opened by junk waits at most that long.
+    Synchronous callers are single-flight: concurrent misses wait for one
+    fetch and look again, rather than each making their own.
 
     *Never expiring* is the one this class got wrong first, and it is the
     worst of the three, because it fails silently and in the safe-looking
@@ -99,10 +107,14 @@ class JwksCache:
         *,
         keys: Mapping[str, Any] | None = None,
         ttl: float = DEFAULT_JWKS_TTL_SECONDS,
+        refetch_interval: float = UNKNOWN_KID_REFETCH_SECONDS,
     ) -> None:
         self.jwks_uri = jwks_uri
         self.ttl = ttl
+        self.refetch_interval = refetch_interval
         self._lock = threading.Lock()
+        self._fetch_lock = threading.Lock()
+        self._miss_refetched_at: float | None = None
         self._key_set: PyJWKSet | None = None
         self._expires_at = 0.0
         if keys is not None:
@@ -128,6 +140,19 @@ class JwksCache:
                 return key
         return None
 
+    def _claim_refetch(self) -> bool:
+        """Whether this miss may go to the issuer. Always, for an empty or
+        stale set; for an unknown ``kid`` on a fresh set, once per window."""
+        now = time.monotonic()
+        with self._lock:
+            if self._key_set is None or now >= self._expires_at:
+                return True
+            recent = self._miss_refetched_at
+            if recent is not None and now - recent < self.refetch_interval:
+                return False
+            self._miss_refetched_at = now
+            return True
+
     def _store(self, payload: Mapping[str, Any]) -> None:
         key_set = _key_set_from(payload)
         with self._lock:
@@ -145,7 +170,14 @@ class JwksCache:
         key = self._lookup(kid)
         if key is not None:
             return key
-        self._store(fetch_jwks(self.jwks_uri, client=client, timeout=timeout))
+        with self._fetch_lock:
+            # Another thread may have fetched while this one waited.
+            key = self._lookup(kid)
+            if key is not None:
+                return key
+            if not self._claim_refetch():
+                raise TokenError("no signing key matches this token's kid")
+            self._store(fetch_jwks(self.jwks_uri, client=client, timeout=timeout))
         key = self._lookup(kid, require_fresh=False)
         if key is None:
             raise TokenError("no signing key matches this token's kid")
@@ -162,6 +194,11 @@ class JwksCache:
         key = self._lookup(kid)
         if key is not None:
             return key
+        # No single-flight here — a thread lock cannot be held across an
+        # await — but the window is claimed before the fetch, so concurrent
+        # misses on a fresh set still produce one request, not one each.
+        if not self._claim_refetch():
+            raise TokenError("no signing key matches this token's kid")
         self._store(await async_fetch_jwks(self.jwks_uri, client=client, timeout=timeout))
         key = self._lookup(kid, require_fresh=False)
         if key is None:

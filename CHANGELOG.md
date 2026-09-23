@@ -16,10 +16,6 @@ release; they decouple at `1.0.0`.
   log line. It is an account some other part of the project manages, and
   an operator should decide what it is.
 
-## Unreleased
-
-### Changed
-
 - **Only the admin's own sign-in opens the admin.** Staff flags alone no
   longer admit a session:
   - A session opened by any other sign-in in the project is sent through
@@ -27,6 +23,13 @@ release; they decouple at `1.0.0`.
   - A break-glass session counts only while `GRANTOR_ADMIN_BREAK_GLASS` is
     on, so switching it off closes the sessions it opened, not just the
     form.
+
+- **Unknown signing keys no longer each cost a trip to the issuer.** A
+  token naming a `kid` the cached set lacks still triggers an immediate
+  refetch, so a key rotation is picked up at once. Further unknown-`kid`
+  refetches on a fresh set are then limited to one per 30 seconds
+  (`JwksCache(refetch_interval=...)`), and concurrent misses share one
+  fetch. Expiry of the cached set is unchanged.
 
 ## 0.1.2 — 2026-09-22
 
