@@ -51,6 +51,14 @@ logger = logging.getLogger("grantor_django.admin")
 
 BREAK_GLASS_SETTING = "GRANTOR_ADMIN_BREAK_GLASS"
 
+#: Which door this session came through into the admin. Only the admin's
+#: own sign-in writes it, so a session opened anywhere else — the
+#: application's sign-in, some other password login — is not an admin
+#: session, whatever the user's flags say.
+ADMIN_SESSION_KEY = "_grantor_admin_via"
+VIA_GRANTOR = "grantor"
+VIA_BREAK_GLASS = "break-glass"
+
 # Its own cookie, so an admin sign-in and an application sign-in in the same
 # browser cannot overwrite each other's transaction.
 _TXN_COOKIE = "grantor_admin_txn"
@@ -150,6 +158,25 @@ def _refuse(claims: dict[str, Any], required_role: str) -> None:
 class GrantorAdminSite(AdminSite):
     """An admin whose login view is a redirect to the issuer."""
 
+    def has_permission(self, request: HttpRequest) -> bool:
+        """Staff flags *and* a session that came through this admin's door.
+
+        `is_staff` is written by the admin sign-in from the role at that
+        moment. A session opened by any other sign-in has not had the role
+        re-read, so its flags may be stale; it is sent through the admin
+        sign-in rather than let in on them. A break-glass session counts only
+        while break-glass is on, so switching the setting off closes the
+        sessions it opened, not only the form.
+        """
+        if not super().has_permission(request):
+            return False
+        via = request.session.get(ADMIN_SESSION_KEY)
+        if via == VIA_GRANTOR:
+            return True
+        if via == VIA_BREAK_GLASS:
+            return bool(getattr(settings, BREAK_GLASS_SETTING, False))
+        return False
+
     def get_urls(self) -> list[Any]:
         return [
             path("grantor/callback", self.grantor_callback, name="grantor_callback"),
@@ -247,7 +274,10 @@ class GrantorAdminSite(AdminSite):
             "passwords. Turn %s off once you are back in.",
             BREAK_GLASS_SETTING,
         )
-        return super().login(request, extra_context)
+        response = super().login(request, extra_context)
+        if request.method == "POST" and request.user.is_authenticated:
+            request.session[ADMIN_SESSION_KEY] = VIA_BREAK_GLASS
+        return response
 
     def logout(self, request: HttpRequest, extra_context: Any = None) -> HttpResponse:
         """End the local session, then the issuer's.
@@ -320,6 +350,7 @@ class GrantorAdminSite(AdminSite):
 
         user = user_for_claims(claims)
         django_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        request.session[ADMIN_SESSION_KEY] = VIA_GRANTOR
 
         response = HttpResponseRedirect(txn.next_url or reverse(f"{self.name}:index"))
         _clear_txn(response)

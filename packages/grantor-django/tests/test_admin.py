@@ -262,3 +262,32 @@ def test_an_account_with_its_own_password_is_not_taken_over_by_admin_sign_in(cli
     assert not local.is_staff
     assert not local.is_superuser
     assert local.check_password("a local password 1")
+
+
+# --- only the admin's own sign-in opens the admin ----------------------------
+
+
+def _staff(username=SUB):
+    User = get_user_model()
+    user = User.objects.create(username=username, is_staff=True, is_superuser=True)
+    user.set_unusable_password()
+    user.save()
+    return user
+
+
+def test_a_session_from_another_sign_in_does_not_open_the_admin(client, admin_issuer):
+    """Staff flags are set by the admin sign-in from the role *at that
+    moment*. A session that did not come through it — the application's
+    own sign-in, say — has not had the role re-read, so it is sent to sign
+    in rather than let in on flags that may be stale."""
+    client.force_login(_staff())
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 302
+    assert reverse("admin:login") in response["Location"]
+
+
+def test_the_admin_sign_in_opens_it(client, admin_issuer):
+    _sign_in(client, admin_issuer, ["superadmin"])
+    assert client.get(reverse("admin:index")).status_code == 200

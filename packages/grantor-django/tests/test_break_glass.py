@@ -226,3 +226,32 @@ def test_it_says_the_setting_is_not_an_environment_variable(locked_out_admin):
     output = _run("ada", "--i-understand")
     assert "not an environment variable" in output
     assert "env.bool" in output
+
+
+def test_a_break_glass_password_used_anywhere_else_does_not_open_the_admin(
+    client, locked_out_admin, settings, issuer
+):
+    """Two acts: the password *and* the setting. With the setting off, the
+    password must not work through some other login the project has."""
+    password = _password_from(_run("ada", "--i-understand"))
+    assert client.login(username="ada", password=password)
+
+    response = client.get(reverse("admin:index"))
+
+    assert response.status_code == 302
+
+
+def test_turning_the_setting_off_closes_sessions_it_opened(
+    client, locked_out_admin, settings, issuer
+):
+    settings.GRANTOR_ADMIN_BREAK_GLASS = True
+    password = _password_from(_run("ada", "--i-understand"))
+    client.post(
+        reverse("admin:login"),
+        {"username": "ada", "password": password, "next": reverse("admin:index")},
+    )
+    assert client.get(reverse("admin:index")).status_code == 200
+
+    settings.GRANTOR_ADMIN_BREAK_GLASS = False
+
+    assert client.get(reverse("admin:index")).status_code == 302

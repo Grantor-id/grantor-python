@@ -16,6 +16,18 @@ release; they decouple at `1.0.0`.
   log line. It is an account some other part of the project manages, and
   an operator should decide what it is.
 
+## Unreleased
+
+### Changed
+
+- **Only the admin's own sign-in opens the admin.** Staff flags alone no
+  longer admit a session:
+  - A session opened by any other sign-in in the project is sent through
+    the admin sign-in, which re-reads the role from the issuer.
+  - A break-glass session counts only while `GRANTOR_ADMIN_BREAK_GLASS` is
+    on, so switching it off closes the sessions it opened, not just the
+    form.
+
 ## 0.1.2 — 2026-09-22
 
 ### Added
