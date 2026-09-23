@@ -171,3 +171,50 @@ def test_a_zero_ttl_means_always_refetch_not_never_work(issuer, discovery, mint)
     issuer["withdraw_a_publish_b"]()
     with pytest.raises(TokenError, match="kid"):
         _verify(issuer, token_a, discovery, ttl=0)
+
+
+def _junk(mint, issuer, n):
+    """Tokens naming keys the issuer never published — signed with a real
+    key so only the `kid` is wrong."""
+    return [mint(kid=f"no-such-key-{i}", key=issuer["keys"]["A"], aud=CLIENT_ID) for i in range(n)]
+
+
+def test_unknown_kids_share_one_refetch_per_window(issuer, discovery, mint, clock):
+    """An unknown `kid` refetches, but a stream of them does not each get
+    their own trip to the issuer: one per window, whatever the kids are."""
+    assert _verify(issuer, _token(issuer, "A", mint), discovery)["sub"]
+    before = issuer["jwks_fetches"]
+
+    for raw in _junk(mint, issuer, 50):
+        with pytest.raises(TokenError, match="kid"):
+            _verify(issuer, raw, discovery)
+
+    assert issuer["jwks_fetches"] - before == 1
+
+
+def test_the_window_reopens(issuer, discovery, mint, clock):
+    assert _verify(issuer, _token(issuer, "A", mint), discovery)["sub"]
+    for raw in _junk(mint, issuer, 2):
+        with pytest.raises(TokenError):
+            _verify(issuer, raw, discovery)
+    before = issuer["jwks_fetches"]
+
+    clock.advance(31)
+    with pytest.raises(TokenError):
+        _verify(issuer, _junk(mint, issuer, 1)[0], discovery)
+
+    assert issuer["jwks_fetches"] == before + 1
+
+
+async def test_the_async_path_shares_the_window(issuer, discovery, mint, clock):
+    assert _verify(issuer, _token(issuer, "A", mint), discovery)["sub"]
+    before = issuer["jwks_fetches"]
+    async_client = httpx.AsyncClient(transport=issuer["client"]._transport)
+
+    for raw in _junk(mint, issuer, 10):
+        with pytest.raises(TokenError):
+            await grantor.async_verify_access_token(
+                raw, discovery=discovery, audience=CLIENT_ID, client=async_client
+            )
+
+    assert issuer["jwks_fetches"] - before <= 1
