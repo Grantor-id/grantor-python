@@ -267,3 +267,76 @@ async def test_the_async_path_verifies_the_same_token(discovery, jwks, mint):
         mint(nonce="n"), discovery=discovery, audience=CLIENT_ID, nonce="n", jwks=jwks
     )
     assert claims["sub"]
+
+
+# --- pinning the tenant and the clients a resource server accepts ----------
+#
+# `iss` names an organization, and an organization may own several
+# tenants. A resource server that knows which tenant it belongs to, or
+# which applications may call it, can say so and have it enforced.
+
+
+def test_a_pinned_tenant_accepts_its_own_tokens(discovery, jwks, mint):
+    claims = grantor.verify_access_token(
+        mint(aud=API_AUDIENCE, tenant="northwind", client_id=CLIENT_ID),
+        discovery=discovery,
+        audience=API_AUDIENCE,
+        jwks=jwks,
+        tenant="northwind",
+    )
+    assert claims["tenant"] == "northwind"
+
+
+def test_a_pinned_tenant_refuses_another_tenants_token(discovery, jwks, mint):
+    with pytest.raises(TokenError, match="tenant"):
+        grantor.verify_access_token(
+            mint(aud=API_AUDIENCE, tenant="southwind", client_id=CLIENT_ID),
+            discovery=discovery,
+            audience=API_AUDIENCE,
+            jwks=jwks,
+            tenant="northwind",
+        )
+
+
+def test_a_pinned_tenant_refuses_a_token_that_names_none(discovery, jwks, mint):
+    with pytest.raises(TokenError, match="tenant"):
+        grantor.verify_access_token(
+            mint(aud=API_AUDIENCE, client_id=CLIENT_ID),
+            discovery=discovery,
+            audience=API_AUDIENCE,
+            jwks=jwks,
+            tenant="northwind",
+        )
+
+
+def test_an_allowed_client_list_refuses_everyone_else(discovery, jwks, mint):
+    with pytest.raises(TokenError, match="client"):
+        grantor.verify_access_token(
+            mint(aud=API_AUDIENCE, client_id="someone-else"),
+            discovery=discovery,
+            audience=API_AUDIENCE,
+            jwks=jwks,
+            client_ids=[CLIENT_ID],
+        )
+
+
+def test_an_allowed_client_list_admits_its_members(discovery, jwks, mint):
+    claims = grantor.verify_access_token(
+        mint(aud=API_AUDIENCE, client_id=CLIENT_ID),
+        discovery=discovery,
+        audience=API_AUDIENCE,
+        jwks=jwks,
+        client_ids=[CLIENT_ID, "another-app"],
+    )
+    assert claims["client_id"] == CLIENT_ID
+
+
+async def test_the_async_path_pins_the_same_way(discovery, jwks, mint):
+    with pytest.raises(TokenError, match="tenant"):
+        await grantor.async_verify_access_token(
+            mint(aud=API_AUDIENCE, tenant="southwind", client_id=CLIENT_ID),
+            discovery=discovery,
+            audience=API_AUDIENCE,
+            jwks=jwks,
+            tenant="northwind",
+        )
