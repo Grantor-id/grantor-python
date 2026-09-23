@@ -82,6 +82,7 @@ from ._tokens import (
     async_fetch_jwks,
     async_verify_access_token,
     async_verify_id_token,
+    check_access_token_origin,
     check_nonce,
     clear_jwks_cache,
     decode_and_verify,
@@ -97,7 +98,7 @@ from .client import (
     TokenResponse,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "__version__",
@@ -142,6 +143,7 @@ __all__ = [
     "async_verify_id_token",
     "verify_access_token",
     "async_verify_access_token",
+    "check_access_token_origin",
     "decode_and_verify",
     "check_nonce",
     "JwksCache",
