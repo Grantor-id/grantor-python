@@ -208,6 +208,10 @@ class GrantorJWTAuthentication(authentication.BaseAuthentication):
                     ttl=conf.get("GRANTOR_JWKS_CACHE_SECONDS"),
                 ),
                 audience=audience(),
+                # Optional, recommended: the tenant this API belongs to and
+                # the applications allowed to call it (see the README).
+                tenant=getattr(settings, "GRANTOR_TENANT", None),
+                client_ids=getattr(settings, "GRANTOR_ALLOWED_CLIENT_IDS", None),
                 client=http,
                 # The name always said JWKS. Until now it bounded only the
                 # discovery document, so a consumer's key-cache setting was

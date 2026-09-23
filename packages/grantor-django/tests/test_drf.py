@@ -297,3 +297,15 @@ def test_nothing_malformed_reaches_the_issuer(client, malformed, monkeypatch):
     monkeypatch.setattr("grantor_django.drf.discover", explode)
     response = client.get(reverse("whoami"), HTTP_AUTHORIZATION=f"Bearer {malformed}")
     assert response.status_code == 401
+
+
+def test_grantor_tenant_refuses_another_tenants_token(client, token, settings):
+    settings.GRANTOR_TENANT = "northwind"
+    assert _get(client, reverse("whoami"), token(tenant="southwind")).status_code == 401
+    assert _get(client, reverse("whoami"), token(tenant="northwind")).status_code == 200
+
+
+def test_grantor_allowed_client_ids_refuses_other_applications(client, token, settings):
+    settings.GRANTOR_ALLOWED_CLIENT_IDS = [CLIENT_ID]
+    assert _get(client, reverse("whoami"), token(client_id="someone-else")).status_code == 401
+    assert _get(client, reverse("whoami"), token()).status_code == 200

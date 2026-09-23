@@ -386,11 +386,34 @@ async def async_verify_id_token(
     )
 
 
+def check_access_token_origin(
+    claims: Mapping[str, Any],
+    *,
+    tenant: str | None = None,
+    client_ids: Iterable[str] | None = None,
+) -> None:
+    """Hold an already-verified access token to the tenant and clients this
+    resource server accepts.
+
+    Both are optional and both are recommended. The issuer is an
+    *organization*, which may run several tenants and many applications;
+    ``aud`` says the token is for this API, and these say it came from the
+    tenant and the applications this API was built to serve. A token that
+    names no tenant fails a pinned tenant — absence is not agreement.
+    """
+    if tenant is not None and claims.get("tenant") != tenant:
+        raise TokenError("token was issued for a different tenant")
+    if client_ids is not None and claims.get("client_id") not in set(client_ids):
+        raise TokenError("token was issued to a client this API does not accept")
+
+
 def verify_access_token(
     raw: str,
     *,
     discovery: DiscoveryDocument,
     audience: str | Iterable[str],
+    tenant: str | None = None,
+    client_ids: Iterable[str] | None = None,
     jwks: JwksCache | None = None,
     client: httpx.Client | None = None,
     leeway: int = LEEWAY_SECONDS,
@@ -403,10 +426,13 @@ def verify_access_token(
     token for an API, and a resource server that accepts one has made ``aud``
     decorative — which is the difference between an audience check and the
     appearance of one.
+
+    ``tenant`` (the tenant's slug) and ``client_ids`` narrow it further —
+    see :func:`check_access_token_origin`.
     """
     cache = jwks or _cache_for(discovery.jwks_uri, jwks_ttl)
     key = cache.signing_key(raw, client=client)
-    return _verify(
+    claims = _verify(
         raw,
         discovery=discovery,
         audience=audience,
@@ -415,6 +441,8 @@ def verify_access_token(
         leeway=leeway,
         required_claims=ACCESS_TOKEN_REQUIRED_CLAIMS,
     )
+    check_access_token_origin(claims, tenant=tenant, client_ids=client_ids)
+    return claims
 
 
 async def async_verify_access_token(
@@ -422,6 +450,8 @@ async def async_verify_access_token(
     *,
     discovery: DiscoveryDocument,
     audience: str | Iterable[str],
+    tenant: str | None = None,
+    client_ids: Iterable[str] | None = None,
     jwks: JwksCache | None = None,
     client: httpx.AsyncClient | None = None,
     leeway: int = LEEWAY_SECONDS,
@@ -429,7 +459,7 @@ async def async_verify_access_token(
 ) -> dict[str, Any]:
     cache = jwks or _cache_for(discovery.jwks_uri, jwks_ttl)
     key = await cache.async_signing_key(raw, client=client)
-    return _verify(
+    claims = _verify(
         raw,
         discovery=discovery,
         audience=audience,
@@ -438,3 +468,5 @@ async def async_verify_access_token(
         leeway=leeway,
         required_claims=ACCESS_TOKEN_REQUIRED_CLAIMS,
     )
+    check_access_token_origin(claims, tenant=tenant, client_ids=client_ids)
+    return claims

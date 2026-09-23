@@ -6,7 +6,29 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
-## Unreleased
+## 0.1.2 — 2026-09-22
+
+### Added
+
+- **A resource server can name the tenant and the applications it
+  accepts.** An issuer is an *organization*, and an organization may run
+  several tenants and many applications; `aud` says a token is for this
+  API, and these say it came from where this API expects. Both are
+  optional and both are recommended:
+
+      GRANTOR_TENANT = "northwind"                 # the tenant's slug
+      GRANTOR_ALLOWED_CLIENT_IDS = ["web-app-id"]  # who may call this API
+
+  Outside Django, `verify_access_token` and `async_verify_access_token`
+  take the same two as `tenant=` and `client_ids=`, and
+  `check_access_token_origin` applies them to claims already verified. A
+  token that names no tenant does not match a pinned one.
+
+### Changed
+
+- `grantor-django` requires `grantor>=0.1.2`.
+
+## 0.1.1 — 2026-09-21
 
 ### Added
 
