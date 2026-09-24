@@ -2,8 +2,8 @@
   "_comment": [
     "The canonical quickstart snippets, owned by the library that has to make",
     "them true. `tests/test_quickstart_snippets.py` reconciles every string",
-    "here against `tests/djangoproject/` — the Django project this repository",
-    "actually runs in CI — so a snippet cannot drift from a working",
+    "here against `tests/djangoproject/` \u2014 the Django project this repository",
+    "actually runs in CI \u2014 so a snippet cannot drift from a working",
     "configuration without a test going red.",
     "",
     "docs.grantor.id vendors this file and checks its own copy against it,",
@@ -17,10 +17,16 @@
     "load-bearing: the redirect URI, the transaction cookie's path and the",
     "system check all derive from reverse('grantor_django:callback').",
     "A quickstart that does not run costs the reader their trust in their",
-    "first minute, which is the most expensive minute there is."
+    "first minute, which is the most expensive minute there is.",
+    "",
+    "`authentication_backends` is here because the reconciliation below",
+    "could not have caught its absence: it checks that every snippet is",
+    "correct, never that the set is sufficient. Those are different",
+    "properties, and a reader needs the second one."
   ],
   "install": "pip install grantor-django",
   "installed_apps": "INSTALLED_APPS = [\n    ...,\n    \"grantor_django\",\n]",
+  "authentication_backends": "AUTHENTICATION_BACKENDS = [\n    \"grantor_django.backends.GrantorBackend\",\n    # Keep Django's own backend only while this project still has\n    # passwords of its own. See the note below before removing it.\n    \"django.contrib.auth.backends.ModelBackend\",\n]",
   "settings": "GRANTOR_ISSUER = \"https://acme.api.grantor.id\"\nGRANTOR_CLIENT_ID = env(\"GRANTOR_CLIENT_ID\")\nGRANTOR_CLIENT_SECRET = env(\"GRANTOR_CLIENT_SECRET\")\nGRANTOR_CALLBACK_BASE_URL = \"https://app.example.com\"",
   "urls": "urlpatterns = [\n    path(\"auth/\", include(\"grantor_django.urls\")),\n]",
   "subject_field": "GRANTOR_SUBJECT_FIELD = \"profile.grantor_sub\"",
