@@ -22,6 +22,7 @@ class GrantorDjangoConfig(AppConfig):
 
     def ready(self) -> None:
         register(_check_settings)
+        register(_check_authentication_backend)
         register(_check_subject_queryset)
         register(_check_subject_manager)
 
@@ -32,6 +33,55 @@ def _check_settings(app_configs: Any, **kwargs: Any) -> list[Error]:
     return [
         Error(problem, id=f"grantor_django.E{index:03d}")
         for index, problem in enumerate(check_configuration(), start=1)
+    ]
+
+
+def _check_authentication_backend(app_configs: Any, **kwargs: Any) -> list[Warning]:
+    """Warn when the sign-in views are mounted and nothing can answer them.
+
+    ``GrantorBackend`` is not installed by adding this app. Django keeps
+    whatever ``AUTHENTICATION_BACKENDS`` says, and its default says
+    ``ModelBackend`` alone — which cannot answer
+    ``authenticate(request, grantor_claims=...)`` at all.
+
+    The failure that follows is the expensive kind, because it is
+    *plausible*: ``authenticate`` returns ``None``, the callback turns that
+    into ``account_not_found``, and the reader is told their user does not
+    exist. That is the one explanation that is wrong, and it sends them to
+    their database instead of their settings.
+
+    So this fires at boot, where the audience is whoever configured the
+    project, rather than at a stranger's first sign-in.
+
+    Quiet unless the project actually mounted the session views: a
+    resource-server-only or admin-only install needs no backend, and a
+    warning it cannot act on is one it learns to ignore.
+    """
+    from .conf import _session_login_is_mounted, get
+
+    if not get("GRANTOR_ENABLED") or not _session_login_is_mounted():
+        return []
+
+    from django.conf import settings
+
+    backends = list(getattr(settings, "AUTHENTICATION_BACKENDS", []))
+    if any(name.endswith("GrantorBackend") for name in backends):
+        return []
+    return [
+        Warning(
+            "The Grantor sign-in views are mounted but GrantorBackend is not in "
+            "AUTHENTICATION_BACKENDS, so authenticate() has nothing that can answer "
+            "them. Every sign-in will be refused as account_not_found, which names "
+            "the wrong cause: the account is fine, the backend is missing.",
+            hint=(
+                'Add "grantor_django.backends.GrantorBackend" to '
+                "AUTHENTICATION_BACKENDS. Keep django.contrib.auth.backends."
+                "ModelBackend beside it only while this project still has passwords "
+                "of its own — removing it closes the password path, including "
+                "break-glass."
+            ),
+            id="grantor_django.W003",
+        )
     ]
 
 

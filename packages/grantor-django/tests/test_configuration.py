@@ -328,3 +328,49 @@ def test_an_explicit_queryset_silences_it(settings, unfiltered_default):
     settings.GRANTOR_USER_QUERYSET = "djangoproject.querysets.live_users"
 
     assert _check_subject_manager(None) == []
+
+
+class TestTheBackendMustBeInstalled:
+    """W003: the sign-in views mounted with nothing able to answer them.
+
+    Adding `grantor_django` to INSTALLED_APPS does not install the backend.
+    Django keeps whatever AUTHENTICATION_BACKENDS says, and its default says
+    ModelBackend alone, which cannot answer `grantor_claims` at all
+    (AUTH-233).
+    """
+
+    def test_the_default_django_configuration_is_warned_about(self, settings):
+        """Django's own default, which is what a reader keeps by doing
+        nothing."""
+        settings.AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
+
+        ids = [e.id for e in _grantor_errors()]
+
+        assert "grantor_django.W003" in ids
+
+    def test_no_backends_at_all_is_warned_about(self, settings):
+        settings.AUTHENTICATION_BACKENDS = []
+
+        assert "grantor_django.W003" in [e.id for e in _grantor_errors()]
+
+    def test_the_backend_alone_is_enough_to_silence_it(self, settings):
+        """ModelBackend beside it is a project decision, not a requirement."""
+        settings.AUTHENTICATION_BACKENDS = ["grantor_django.backends.GrantorBackend"]
+
+        assert "grantor_django.W003" not in [e.id for e in _grantor_errors()]
+
+    def test_a_project_that_mounts_nothing_hears_nothing(self, settings):
+        """A resource server or an admin-only install needs no backend, and
+        a warning it cannot act on is one it learns to ignore."""
+        settings.AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
+        settings.ROOT_URLCONF = "djangoproject.urls_api_only"
+
+        assert "grantor_django.W003" not in [e.id for e in _grantor_errors()]
+
+    def test_a_dark_deploy_hears_nothing(self, settings):
+        """GRANTOR_ENABLED is False while the code is deployed and off, and
+        nothing is required of a configuration nobody is using yet."""
+        settings.AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
+        settings.GRANTOR_ENABLED = False
+
+        assert "grantor_django.W003" not in [e.id for e in _grantor_errors()]
