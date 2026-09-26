@@ -49,3 +49,19 @@ class Profile(models.Model):
                 name="unique_live_linked_grantor_sub",
             )
         ]
+
+
+class NullableSubjectProfile(models.Model):
+    """The other natural shape for "not linked yet": ``NULL``, not ``""``.
+
+    ``null=True`` with ``unique=True`` is the pairing a careful adopter
+    reaches for, because Postgres NULLs never collide, so no conditional
+    constraint is needed. It is the third consumer's shape, and the email
+    bootstrap used to match nobody on it (AUTH-232). Its manager is plain,
+    so this model tests the sentinel and nothing else.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="nullable_profile"
+    )
+    sub = models.CharField(max_length=255, null=True, blank=True, unique=True)

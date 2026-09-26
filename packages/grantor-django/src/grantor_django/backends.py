@@ -22,6 +22,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
 from django.core.exceptions import FieldDoesNotExist
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils.module_loading import import_string
 
 from . import conf
@@ -110,9 +111,31 @@ def _users_whose_subject(value: str) -> Any | None:
     if rel is None:
         return None
     _, field = conf.subject_field()
-    return rel.related_model._default_manager.filter(**{field: value}).values_list(
+    match = _unlinked(field) if value == "" else Q(**{field: value})
+    return rel.related_model._default_manager.filter(match).values_list(
         rel.field.attname, flat=True
     )
+
+
+def _unlinked(lookup: str, row: str | None = None) -> Q:
+    """Not linked yet, in both of the spellings a project may have chosen.
+
+    ``""`` and ``NULL`` mean the same thing here, and the library should not
+    care which one a project picked: ``null=True`` with ``unique=True`` is the
+    natural pairing, because NULLs never collide. Matching only ``""`` made
+    the bootstrap match nobody on such a column, so a real person's first
+    sign-in was refused, while every test that seeded a ``sub`` stayed green
+    (AUTH-232).
+
+    ``row`` is the relation the lookup crosses, when it crosses one. Across
+    a LEFT JOIN, ``<row>__<field> IS NULL`` is also true for a user with no
+    row at all, and that person is not unlinked: there is nowhere to write
+    the ``sub``. So the row has to exist.
+    """
+    match = Q(**{lookup: ""}) | Q(**{f"{lookup}__isnull": True})
+    if row:
+        match &= Q(**{f"{row}__isnull": False})
+    return match
 
 
 def _lookup(prefix: str) -> str:
@@ -151,8 +174,13 @@ def link_by_verified_email(claims: Mapping[str, Any], sub: str) -> Any | None:
         # by anybody who could prove that email address.
         candidate = _user_queryset().filter(email__iexact=email, pk__in=unlinked).first()
     else:
-        lookup = _lookup("sub")
-        candidate = _user_queryset().filter(email__iexact=email).filter(**{lookup: ""}).first()
+        related, _ = conf.subject_field()
+        candidate = (
+            _user_queryset()
+            .filter(email__iexact=email)
+            .filter(_unlinked(_lookup("sub"), related))
+            .first()
+        )
     if candidate is None:
         return None
 

@@ -10,3 +10,8 @@ from django.contrib.auth import get_user_model
 
 def live_users():
     return get_user_model()._default_manager.filter(profile__deleted_at__isnull=True)
+
+
+def every_user():
+    """A stated answer that is simply everybody, to force the join route."""
+    return get_user_model()._default_manager.all()
