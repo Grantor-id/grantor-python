@@ -1,6 +1,6 @@
 [project]
 name = "grantor-django"
-version = "0.1.3"
+version = "0.1.4"
 description = "Sign in with Grantor from Django — views, an authentication backend, DRF and the admin."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,7 @@ dependencies = [
     # is the very core this release is cut with, and
     # `pip install grantor-django==0.1.0a0` fails on it. A specifier that
     # names a pre-release admits them. Same lockstep, one that installs.
-    "grantor>=0.1.3,<0.2",
+    "grantor>=0.1.4,<0.2",
     # Capped at the declared support matrix — 4.2 LTS through 5.x. An
     # uncapped range would let a fresh install resolve to a Django this
     # release was never tested against, which is a promise the
