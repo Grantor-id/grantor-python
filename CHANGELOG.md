@@ -6,7 +6,25 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
-## Unreleased
+## 0.1.4 · 2026-09-26
+
+### Changed
+
+- `grantor-django` requires `grantor>=0.1.4`. The core itself is unchanged;
+  it moves in lockstep.
+
+### Added
+
+- **A boot warning when the sign-in views have no backend to answer them
+  (`W003`).** Adding the app does not install `GrantorBackend`: Django keeps
+  whatever `AUTHENTICATION_BACKENDS` says, and its default, `ModelBackend`
+  alone, cannot answer Grantor's claims. Every sign-in was then refused as
+  `account_not_found`, which names the wrong cause and sends the reader to
+  their database instead of their settings. `manage.py check` now says so
+  when the session views are mounted, `GRANTOR_ENABLED` is on and no
+  backend ending in `GrantorBackend` is listed. It stays quiet for a
+  resource-server-only or admin-only install. The published quickstart
+  shows the setting (AUTH-233).
 
 ### Fixed
 
