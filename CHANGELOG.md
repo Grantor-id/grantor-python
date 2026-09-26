@@ -6,6 +6,28 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
+## Unreleased
+
+### Fixed
+
+- **A `NULL` subject column made the email bootstrap match nobody.** The
+  bootstrap looked for an unlinked account with `<field> = ''`, and in SQL
+  that never matches `NULL`. On a project whose subject column is
+  `null=True`, which is the natural pairing with `unique=True` because
+  NULLs never collide, a real person's **first** sign-in was refused with
+  `account_not_found`. It worked the moment a `sub` existed, so any test
+  that seeded one stayed green. Found by the third consumer before it wrote
+  a line against the issuer (AUTH-232).
+
+  `""` and `NULL` now both mean "not linked yet", on both lookup routes.
+  Across a relation, "not linked" also requires the row to exist: a LEFT
+  JOIN makes `<row>__<field> IS NULL` true for a user with no row at all,
+  and there is nowhere to write their `sub`.
+
+  **Nothing to change if your column is `blank=True, default=""`.** If you
+  worked around this by reshaping a nullable column into that form, the
+  workaround keeps working and is no longer needed.
+
 ## 0.1.3 — 2026-09-23
 
 ### Changed
