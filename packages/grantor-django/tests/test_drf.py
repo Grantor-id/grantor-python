@@ -30,6 +30,8 @@ def token(keypair, issuer):
             "sub": "0d9b1a7e-1a62-4a0e-9b7a-1f0f2c3d4e5f",
             "aud": aud,
             "client_id": CLIENT_ID,
+            "scope": "openid profile email",
+            "jti": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
             "iat": now,
             "exp": now + 300,
             **claims,
