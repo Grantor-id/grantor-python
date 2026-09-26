@@ -59,12 +59,16 @@ class AuthorizationRequest:
     trip is the caller's problem and deliberately not this package's: the
     Django adapter puts them in a signed, short-TTL cookie rather than the
     session, so that a sign-in begun on one node can finish on another.
+
+    ``code_verifier`` is left out of the ``repr``. ``state`` and ``nonce``
+    already travel in ``url``; the verifier is the one value that never
+    leaves the server until the code comes back.
     """
 
     url: str
     state: str
     nonce: str
-    code_verifier: str
+    code_verifier: str = field(repr=False)
 
 
 @dataclass(frozen=True)

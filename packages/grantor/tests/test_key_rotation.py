@@ -76,7 +76,10 @@ def issuer(signing_key, rotated_key, discovery_payload):
 
 
 def _token(issuer, kid, mint):
-    return mint(kid=kid, key=issuer["keys"][kid], aud=CLIENT_ID)
+    # An access token in the issuer's shape: it is verified as one below.
+    return mint(
+        kid=kid, key=issuer["keys"][kid], aud=CLIENT_ID, client_id=CLIENT_ID, scope="openid"
+    )
 
 
 def _verify(issuer, raw, discovery, ttl=3600.0):

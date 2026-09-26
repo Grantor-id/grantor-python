@@ -120,3 +120,23 @@ def mint(signing_key):
         )
 
     return _mint
+
+
+@pytest.fixture
+def mint_access(mint):
+    """Mint an access token in the issuer's real shape.
+
+    ``mint`` alone produces an ID token's claim set. An access token also
+    carries ``client_id``, ``scope`` and ``jti`` (and ``tenant``), and a
+    fixture that leaves them out tests a token the issuer never produces.
+    ``tenant`` is left to the caller, because its absence is itself a case.
+    """
+
+    def _mint_access(**claims: Any) -> str:
+        claims.setdefault("aud", CLIENT_ID)
+        claims.setdefault("client_id", CLIENT_ID)
+        claims.setdefault("scope", "openid profile email")
+        claims.setdefault("jti", "0f1e2d3c4b5a69788796a5b4c3d2e1f0")
+        return mint(**claims)
+
+    return _mint_access

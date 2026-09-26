@@ -58,7 +58,12 @@ DEFAULT_JWKS_TTL_SECONDS = 3600.0
 UNKNOWN_KID_REFETCH_SECONDS = 30.0
 
 ID_TOKEN_REQUIRED_CLAIMS = ("exp", "iat", "iss", "aud", "sub")
-ACCESS_TOKEN_REQUIRED_CLAIMS = ("exp", "iat", "iss", "aud", "sub")
+# An access token carries everything an ID token does, plus the claims that
+# make it an access token: which client it was issued to and what it grants.
+# The issuer puts `client_id` and `scope` in every access token and in no ID
+# token, and that difference is what keeps an ID token (same key, and for a
+# client with no resource server the same `aud`) from verifying as one.
+ACCESS_TOKEN_REQUIRED_CLAIMS = (*ID_TOKEN_REQUIRED_CLAIMS, "client_id", "scope")
 
 
 def _key_id(raw: str) -> str | None:
@@ -464,8 +469,12 @@ def verify_access_token(
     decorative — which is the difference between an audience check and the
     appearance of one.
 
-    ``tenant`` (the tenant's slug) and ``client_ids`` narrow it further —
+    ``tenant`` (the tenant's slug) and ``client_ids`` narrow it further;
     see :func:`check_access_token_origin`.
+
+    The token must carry ``client_id`` and ``scope``
+    (:data:`ACCESS_TOKEN_REQUIRED_CLAIMS`). An ID token carries neither, so
+    one presented here is refused even where its ``aud`` would match.
     """
     cache = jwks or _cache_for(discovery.jwks_uri, jwks_ttl)
     key = cache.signing_key(raw, client=client)
