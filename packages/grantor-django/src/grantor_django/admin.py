@@ -38,7 +38,7 @@ from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
 from django.core import signing
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed, HttpResponseRedirect
 from django.urls import path, reverse
 from grantor import GrantorClient, GrantorError, ProtocolError, TokenError, parse_redirect_error
 
@@ -286,7 +286,14 @@ class GrantorAdminSite(AdminSite):
         signed back in by a session they were never shown has been told
         something untrue — and on this surface, that is a privileged session
         they believe is closed.
+
+        POST only, like :func:`grantor_django.views.sign_out` and like
+        Django's own admin, whose templates sign out with a POST form on
+        every supported version. A GET sign-out is a link any page can
+        embed, and here it would end the issuer's session as well.
         """
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
         id_token = request.COOKIES.get(conf.get("GRANTOR_ID_TOKEN_COOKIE_NAME"), "")
         django_logout(request)
 
