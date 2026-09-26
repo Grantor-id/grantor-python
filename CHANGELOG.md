@@ -106,6 +106,24 @@ release; they decouple at `1.0.0`.
   Nobody was ever exposed. The severity was real; the urgency was lower,
   and the fix is for the next project rather than the last one.
 
+  **How to tell whether your project is covered.** *Added 2026-09-26, after
+  the release (AUTH-225).* This entry said "fixed" and did not say how to
+  check, which is the same omission that made the `0.1.0a0` fix look
+  finished. The check is the one that found the defect:
+
+  1. Have a test that removes a person the way your project does (soft
+     delete, `is_active=False`), keeps their `sub` on the row, and asserts
+     that signing in with that `sub` is refused. If there is none, write it
+     first; everything below depends on it.
+  2. Remove `GRANTOR_USER_QUERYSET` from your settings, if you set it, and
+     run that test on `>=0.1.1`. It should pass, because the safe route is
+     now the default. If it fails, the manager that filters those rows is
+     not your model's default manager, and `manage.py check` names the
+     shape as `grantor_django.W002`.
+  3. Pin `grantor-django==0.1.0a0` (with `grantor==0.1.0a0`) and run the
+     same test, still without the setting. It should **fail**. A test that
+     passes on both versions is not testing this.
+
 ## 0.1.0a0 — 2026-09-21
 
 First release. Claims the names and proves the release path.
