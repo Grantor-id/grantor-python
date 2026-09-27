@@ -171,7 +171,9 @@ def test_an_alg_none_token_is_rejected(discovery, jwks):
         grantor.verify_id_token(unsigned, discovery=discovery, audience=CLIENT_ID, jwks=jwks)
 
 
-def test_an_access_token_for_the_browser_app_is_not_a_token_for_the_api(discovery, jwks, mint):
+def test_an_access_token_for_the_browser_app_is_not_a_token_for_the_api(
+    discovery, jwks, mint_access
+):
     """The single most important check in a resource server.
 
     A token minted for the UI's own client id is not a token for this API.
@@ -180,13 +182,13 @@ def test_an_access_token_for_the_browser_app_is_not_a_token_for_the_api(discover
     """
     with pytest.raises(TokenError, match="audience"):
         grantor.verify_access_token(
-            mint(aud=CLIENT_ID), discovery=discovery, audience=API_AUDIENCE, jwks=jwks
+            mint_access(aud=CLIENT_ID), discovery=discovery, audience=API_AUDIENCE, jwks=jwks
         )
 
 
-def test_an_access_token_audienced_for_this_api_verifies(discovery, jwks, mint):
+def test_an_access_token_audienced_for_this_api_verifies(discovery, jwks, mint_access):
     claims = grantor.verify_access_token(
-        mint(aud=API_AUDIENCE, scope="things:read", roles=["admin"]),
+        mint_access(aud=API_AUDIENCE, scope="things:read", roles=["admin"]),
         discovery=discovery,
         audience=API_AUDIENCE,
         jwks=jwks,
@@ -276,9 +278,9 @@ async def test_the_async_path_verifies_the_same_token(discovery, jwks, mint):
 # which applications may call it, can say so and have it enforced.
 
 
-def test_a_pinned_tenant_accepts_its_own_tokens(discovery, jwks, mint):
+def test_a_pinned_tenant_accepts_its_own_tokens(discovery, jwks, mint_access):
     claims = grantor.verify_access_token(
-        mint(aud=API_AUDIENCE, tenant="northwind", client_id=CLIENT_ID),
+        mint_access(aud=API_AUDIENCE, tenant="northwind"),
         discovery=discovery,
         audience=API_AUDIENCE,
         jwks=jwks,
@@ -287,10 +289,10 @@ def test_a_pinned_tenant_accepts_its_own_tokens(discovery, jwks, mint):
     assert claims["tenant"] == "northwind"
 
 
-def test_a_pinned_tenant_refuses_another_tenants_token(discovery, jwks, mint):
+def test_a_pinned_tenant_refuses_another_tenants_token(discovery, jwks, mint_access):
     with pytest.raises(TokenError, match="tenant"):
         grantor.verify_access_token(
-            mint(aud=API_AUDIENCE, tenant="southwind", client_id=CLIENT_ID),
+            mint_access(aud=API_AUDIENCE, tenant="southwind"),
             discovery=discovery,
             audience=API_AUDIENCE,
             jwks=jwks,
@@ -298,10 +300,10 @@ def test_a_pinned_tenant_refuses_another_tenants_token(discovery, jwks, mint):
         )
 
 
-def test_a_pinned_tenant_refuses_a_token_that_names_none(discovery, jwks, mint):
+def test_a_pinned_tenant_refuses_a_token_that_names_none(discovery, jwks, mint_access):
     with pytest.raises(TokenError, match="tenant"):
         grantor.verify_access_token(
-            mint(aud=API_AUDIENCE, client_id=CLIENT_ID),
+            mint_access(aud=API_AUDIENCE),
             discovery=discovery,
             audience=API_AUDIENCE,
             jwks=jwks,
@@ -309,10 +311,10 @@ def test_a_pinned_tenant_refuses_a_token_that_names_none(discovery, jwks, mint):
         )
 
 
-def test_an_allowed_client_list_refuses_everyone_else(discovery, jwks, mint):
+def test_an_allowed_client_list_refuses_everyone_else(discovery, jwks, mint_access):
     with pytest.raises(TokenError, match="client"):
         grantor.verify_access_token(
-            mint(aud=API_AUDIENCE, client_id="someone-else"),
+            mint_access(aud=API_AUDIENCE, client_id="someone-else"),
             discovery=discovery,
             audience=API_AUDIENCE,
             jwks=jwks,
@@ -320,9 +322,9 @@ def test_an_allowed_client_list_refuses_everyone_else(discovery, jwks, mint):
         )
 
 
-def test_an_allowed_client_list_admits_its_members(discovery, jwks, mint):
+def test_an_allowed_client_list_admits_its_members(discovery, jwks, mint_access):
     claims = grantor.verify_access_token(
-        mint(aud=API_AUDIENCE, client_id=CLIENT_ID),
+        mint_access(aud=API_AUDIENCE),
         discovery=discovery,
         audience=API_AUDIENCE,
         jwks=jwks,
@@ -331,12 +333,57 @@ def test_an_allowed_client_list_admits_its_members(discovery, jwks, mint):
     assert claims["client_id"] == CLIENT_ID
 
 
-async def test_the_async_path_pins_the_same_way(discovery, jwks, mint):
+async def test_the_async_path_pins_the_same_way(discovery, jwks, mint_access):
     with pytest.raises(TokenError, match="tenant"):
         await grantor.async_verify_access_token(
-            mint(aud=API_AUDIENCE, tenant="southwind", client_id=CLIENT_ID),
+            mint_access(aud=API_AUDIENCE, tenant="southwind"),
             discovery=discovery,
             audience=API_AUDIENCE,
             jwks=jwks,
             tenant="northwind",
         )
+
+
+# --- an ID token is not an access token --------------------------------------
+#
+# Both are signed by the same key and, for a client with no resource server,
+# both carry `aud = client_id`. What tells them apart is the claims only an
+# access token carries: the issuer puts `client_id` and `scope` in every
+# access token and in no ID token.
+
+
+def test_an_id_token_is_not_accepted_as_an_access_token(discovery, jwks, mint):
+    id_token = mint(nonce="n0nce", email="a@example.com", auth_time=int(time.time()))
+    with pytest.raises(TokenError, match="required claim"):
+        grantor.verify_access_token(id_token, discovery=discovery, audience=CLIENT_ID, jwks=jwks)
+
+
+async def test_the_async_path_refuses_an_id_token_the_same_way(discovery, jwks, mint):
+    id_token = mint(nonce="n0nce", email="a@example.com")
+    with pytest.raises(TokenError, match="required claim"):
+        await grantor.async_verify_access_token(
+            id_token, discovery=discovery, audience=CLIENT_ID, jwks=jwks
+        )
+
+
+@pytest.mark.parametrize("claim", ["client_id", "scope"])
+def test_an_access_token_without_an_access_token_claim_is_refused(
+    discovery, jwks, mint_access, claim
+):
+    with pytest.raises(TokenError, match=claim):
+        grantor.verify_access_token(
+            mint_access(aud=API_AUDIENCE, drop=(claim,)),
+            discovery=discovery,
+            audience=API_AUDIENCE,
+            jwks=jwks,
+        )
+
+
+def test_an_access_token_with_no_resource_server_still_verifies(discovery, jwks, mint_access):
+    """Without a resource server the issuer audiences the access token to the
+    client itself. That token is legitimate and must keep verifying."""
+    claims = grantor.verify_access_token(
+        mint_access(aud=CLIENT_ID), discovery=discovery, audience=CLIENT_ID, jwks=jwks
+    )
+    assert claims["client_id"] == CLIENT_ID
+    assert claims["aud"] == CLIENT_ID

@@ -58,10 +58,13 @@ class ClientAuth:
     (an ``Authorization: Basic`` header), ``client_secret_post`` (the
     credentials in the form body), and a public client, which sends a
     ``client_id`` and no secret at all.
+
+    The secret is left out of the ``repr``, so printing this object, or an
+    error reporter capturing it as a local variable, never shows it.
     """
 
     client_id: str
-    client_secret: str | None = None
+    client_secret: str | None = field(default=None, repr=False)
     method: str = "client_secret_basic"
 
     def apply(self, data: dict[str, Any]) -> tuple[str, str] | None:
@@ -102,12 +105,23 @@ class TokenRequest:
     It is a separate field rather than a pre-built header so that nothing
     here ever holds an encoded credential — the HTTP client assembles it at
     the moment of sending and it never sits in a value that might be logged.
+
+    ``data``, ``auth`` and ``headers`` are left out of the ``repr``: between
+    them they hold the authorization code, the PKCE verifier, refresh and
+    access tokens and the client secret. The ``repr`` shows the URL and
+    the names of the form fields, never their values.
     """
 
     url: str
-    data: dict[str, Any]
-    auth: tuple[str, str] | None = None
-    headers: dict[str, str] = field(default_factory=dict)
+    data: dict[str, Any] = field(repr=False)
+    auth: tuple[str, str] | None = field(default=None, repr=False)
+    headers: dict[str, str] = field(default_factory=dict, repr=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"TokenRequest(url={self.url!r}, fields={sorted(self.data)!r}, "
+            f"basic_auth={self.auth is not None})"
+        )
 
 
 def build_authorization_url(

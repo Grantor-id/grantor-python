@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 __all__ = [
     "PkcePair",
@@ -33,10 +33,11 @@ class PkcePair:
     The verifier is a secret and the challenge is not: the challenge goes in
     the URL the browser carries, the verifier stays on the server until the
     code comes back. Keeping them in one object is a reminder that sending
-    the wrong one is a silent downgrade.
+    the wrong one is a silent downgrade. Only the challenge is in the
+    ``repr``.
     """
 
-    verifier: str
+    verifier: str = field(repr=False)
     challenge: str
     method: str = CODE_CHALLENGE_METHOD
 

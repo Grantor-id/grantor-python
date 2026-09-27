@@ -291,3 +291,27 @@ def test_a_session_from_another_sign_in_does_not_open_the_admin(client, admin_is
 def test_the_admin_sign_in_opens_it(client, admin_issuer):
     _sign_in(client, admin_issuer, ["superadmin"])
     assert client.get(reverse("admin:index")).status_code == 200
+
+
+def test_signing_out_of_the_admin_is_not_a_get(client, admin_issuer):
+    """A GET sign-out is a link anybody can put on any page.
+
+    Django's own admin signs out with a POST form (4.2 and 5.x both), and
+    the library's session sign-out is POST-only. The admin matches them.
+    """
+    _sign_in(client, admin_issuer, ["superadmin"])
+    assert "_auth_user_id" in client.session
+
+    response = client.get(reverse("admin:logout"))
+
+    assert response.status_code == 405
+    assert response["Allow"] == "POST"
+    assert "_auth_user_id" in client.session
+
+
+def test_the_admin_pages_sign_out_with_a_post_form(client, admin_issuer):
+    """The template Django ships posts to the logout URL, so POST-only
+    breaks nothing a signed-in admin can click."""
+    _sign_in(client, admin_issuer, ["superadmin"])
+    page = client.get(reverse("admin:index")).content.decode()
+    assert f'method="post" action="{reverse("admin:logout")}"' in page

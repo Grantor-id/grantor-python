@@ -17,7 +17,7 @@ transaction rather than a configuration mistake.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from django.core import signing
@@ -67,10 +67,14 @@ class InvalidTransaction(Exception):
 
 @dataclass(frozen=True)
 class Transaction:
-    """What must survive the trip to the issuer and back."""
+    """What must survive the trip to the issuer and back.
+
+    ``code_verifier`` is left out of the ``repr``: it is the one value here
+    that never travels in a URL.
+    """
 
     state: str
-    code_verifier: str
+    code_verifier: str = field(repr=False)
     nonce: str
     next_url: str = "/"
 

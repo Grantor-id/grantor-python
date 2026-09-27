@@ -6,6 +6,31 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
+## Unreleased
+
+### Changed
+
+- **Access-token verification requires the claims an access token
+  carries.** `ACCESS_TOKEN_REQUIRED_CLAIMS` now includes `client_id` and
+  `scope`, which the issuer puts in every access token.
+  `verify_access_token`, `async_verify_access_token` and the clients'
+  `verify_access_token` refuse a token without them with a `TokenError`
+  ("token lacks a required claim"). This applies whatever `audience` is
+  given; an access token audienced to the client itself (no resource
+  server) still verifies. If you mint tokens yourself in tests, give them
+  `client_id` and `scope` as the issuer does.
+- **Reprs no longer include secret values.** `ClientAuth` omits the client
+  secret. `TokenRequest` shows its URL, the names of its form fields and
+  whether basic auth is set, but not the field values, the basic-auth pair
+  or the headers. `AuthorizationRequest`, `PkcePair` and the Django
+  adapter's `Transaction` omit the PKCE verifier. Attribute access is
+  unchanged.
+- **Admin sign-out requires POST.** `GrantorAdminSite.logout` answers a GET
+  with `405 Method Not Allowed`, matching the library's session sign-out
+  and Django's own admin, whose templates already sign out with a POST
+  form on 4.2 and 5.x. A custom template or link that signs out of the
+  admin with a GET needs to become a POST form with `{% csrf_token %}`.
+
 ## 0.1.4 · 2026-09-26
 
 ### Changed

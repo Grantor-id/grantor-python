@@ -218,3 +218,29 @@ async def test_the_async_client_exchanges_a_code(discovery_payload):
     )
     tokens = await client.exchange_code("c", code_verifier="ver")
     assert tokens.access_token == "at"
+
+
+def test_the_client_refuses_an_id_token_where_an_access_token_belongs(
+    discovery_payload, jwks, mint
+):
+    """With no resource configured the audience falls back to the client id,
+    which an ID token also carries. The claim set is what refuses it."""
+    client = _client(discovery_payload)
+    id_token = mint(nonce="n0nce", email="a@example.com")
+    with pytest.raises(grantor.TokenError):
+        client.verify_access_token(id_token, jwks=jwks)
+
+
+def test_the_client_accepts_an_access_token_audienced_to_itself(
+    discovery_payload, jwks, mint_access
+):
+    client = _client(discovery_payload)
+    claims = client.verify_access_token(mint_access(aud=CLIENT_ID), jwks=jwks)
+    assert claims["client_id"] == CLIENT_ID
+
+
+async def test_the_async_client_refuses_an_id_token_the_same_way(discovery_payload, jwks, mint):
+    http = httpx.AsyncClient(transport=_transport(discovery_payload, {}))
+    client = grantor.AsyncGrantorClient(ISSUER, http=http, client_id=CLIENT_ID)
+    with pytest.raises(grantor.TokenError):
+        await client.verify_access_token(mint(nonce="n0nce"), jwks=jwks)
