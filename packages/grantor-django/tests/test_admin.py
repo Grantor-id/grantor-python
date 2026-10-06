@@ -315,3 +315,158 @@ def test_the_admin_pages_sign_out_with_a_post_form(client, admin_issuer):
     _sign_in(client, admin_issuer, ["superadmin"])
     page = client.get(reverse("admin:index")).content.decode()
     assert f'method="post" action="{reverse("admin:logout")}"' in page
+
+
+# --- the admin finds a person the way the session sign-in does (AUTH-326) ----
+#
+# The test project keeps `sub` on a `Profile`, through GRANTOR_SUBJECT_FIELD,
+# and its username is something else entirely. That is the shape of the
+# adopter that found this: the admin looked the person up by username == sub,
+# found nobody, built a second row for somebody who already had one, and on a
+# project whose username is a unique email, failed the insert with a 500.
+
+
+def _person(username="ana", email="ana@example.com", sub=SUB):
+    """Somebody who already has an account here, linked or not, and who has
+    no local password: the shape every account the library makes has."""
+    from djangoproject.models import Profile
+
+    User = get_user_model()
+    user = User.objects.create(username=username, email=email)
+    user.set_unusable_password()
+    user.save()
+    Profile.objects.create(user=user, grantor_sub=sub)
+    return user
+
+
+def test_a_person_linked_through_the_subject_field_signs_in_as_themselves(client, admin_issuer):
+    ana = _person()
+
+    response, _ = _sign_in(client, admin_issuer, ["superadmin"])
+
+    assert response.status_code == 302
+    assert client.session.get("_auth_user_id") == str(ana.pk)
+    assert get_user_model().objects.count() == 1
+    ana.refresh_from_db()
+    assert ana.is_staff and ana.is_superuser
+
+
+def test_a_linked_person_whose_role_was_revoked_loses_the_admin(client, admin_issuer):
+    """Revocation reaches the row the subject field names, not a stranger."""
+    ana = _person()
+    _sign_in(client, admin_issuer, ["superadmin"])
+    client.logout()
+
+    second, _ = _sign_in(client, admin_issuer, ["viewer"])
+
+    assert second.status_code == 403
+    ana.refresh_from_db()
+    assert not ana.is_staff and not ana.is_superuser
+    assert get_user_model().objects.count() == 1
+
+
+def test_a_verified_email_links_an_unlinked_person_once(client, admin_issuer):
+    """The same one-shot bootstrap the session sign-in uses."""
+    ana = _person(sub="")
+
+    response, _ = _sign_in(
+        client, admin_issuer, ["superadmin"], email="ana@example.com", email_verified=True
+    )
+
+    assert response.status_code == 302
+    assert client.session.get("_auth_user_id") == str(ana.pk)
+    assert ana.profile.__class__.objects.get(user=ana).grantor_sub == SUB
+    assert get_user_model().objects.count() == 1
+
+
+def test_an_unverified_email_links_nobody(client, admin_issuer):
+    ana = _person(sub="")
+
+    _sign_in(client, admin_issuer, ["superadmin"], email="ana@example.com", email_verified=False)
+
+    ana.refresh_from_db()
+    assert not ana.is_staff
+    assert ana.profile.__class__.objects.get(user=ana).grantor_sub == ""
+
+
+def test_somebody_without_the_role_is_not_linked_by_email_either(client, admin_issuer):
+    """A refusal leaves no trace, and a link is a trace."""
+    ana = _person(sub="")
+
+    response, _ = _sign_in(
+        client, admin_issuer, ["viewer"], email="ana@example.com", email_verified=True
+    )
+
+    assert response.status_code == 403
+    assert ana.profile.__class__.objects.get(user=ana).grantor_sub == ""
+
+
+# The exact shape of the adopter that found this: `sub` on the user model
+# itself, and the email as the username. `last_name` stands in for that
+# project's `sub` column; it is the user model's own field, which is the
+# point.
+
+
+@pytest.fixture
+def username_is_email(settings, monkeypatch):
+    settings.GRANTOR_SUBJECT_FIELD = "last_name"
+    monkeypatch.setattr(get_user_model(), "USERNAME_FIELD", "email")
+
+
+def _staff_by_email(sub=""):
+    User = get_user_model()
+    user = User.objects.create(username="ana", email="ana@example.com", last_name=sub)
+    user.set_unusable_password()
+    user.save()
+    return user
+
+
+def test_where_the_username_is_the_email_a_linked_person_signs_in(
+    client, admin_issuer, username_is_email
+):
+    ana = _staff_by_email(sub=SUB)
+
+    response, _ = _sign_in(client, admin_issuer, ["superadmin"], email="ana@example.com")
+
+    assert response.status_code == 302
+    assert client.session.get("_auth_user_id") == str(ana.pk)
+    assert get_user_model().objects.count() == 1
+
+
+def test_where_the_username_is_the_email_it_is_never_rewritten_from_a_claim(
+    client, admin_issuer, username_is_email
+):
+    """The issuer's address may differ; the username is who they are here."""
+    ana = _staff_by_email(sub=SUB)
+
+    _sign_in(client, admin_issuer, ["superadmin"], email="Ana@Elsewhere.example")
+
+    ana.refresh_from_db()
+    assert ana.email == "ana@example.com"
+
+
+def test_where_the_username_is_the_email_a_new_person_gets_the_sub_in_its_field(
+    client, admin_issuer, username_is_email
+):
+    response, _ = _sign_in(client, admin_issuer, ["superadmin"], email="bia@example.com")
+
+    assert response.status_code == 302
+    bia = get_user_model().objects.get(email="bia@example.com")
+    assert bia.last_name == SUB
+    assert bia.is_staff and not bia.has_usable_password()
+
+
+def test_a_new_account_never_takes_a_username_somebody_already_holds(
+    client, admin_issuer, username_is_email
+):
+    """A new row for an address that is already somebody's is not a new
+    person. It is refused, not a 500, and the standing row is left exactly
+    as it was."""
+    ana = _staff_by_email()
+
+    response, _ = _sign_in(client, admin_issuer, ["superadmin"], email="ana@example.com")
+
+    assert response.status_code == 403
+    assert get_user_model().objects.count() == 1
+    ana.refresh_from_db()
+    assert not ana.is_staff and ana.last_name == ""
