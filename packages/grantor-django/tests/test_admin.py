@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import jwt
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.urls import reverse
 from django_support import ISSUER, KID, SUB
 
@@ -470,3 +471,44 @@ def test_a_new_account_never_takes_a_username_somebody_already_holds(
     assert get_user_model().objects.count() == 1
     ana.refresh_from_db()
     assert not ana.is_staff and ana.last_name == ""
+
+
+# --- the session survives the next request (AUTH-330) -----------------------
+#
+# The callback logged the person in under ModelBackend by name. Django keeps
+# that path in the session and, on the next request, refuses to load a user
+# through a backend that is not in AUTHENTICATION_BACKENDS: the session reads
+# as anonymous, the admin sends them to sign in, the issuer signs them in
+# again, and the browser ends on "too many redirects". This module's own
+# advice is to leave ModelBackend out, so following it produced the loop.
+
+
+@pytest.mark.parametrize(
+    "installed",
+    [
+        ["grantor_django.backends.GrantorBackend"],
+        ["django.contrib.auth.backends.ModelBackend"],
+        [
+            "grantor_django.backends.GrantorBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    ],
+)
+def test_the_admin_opens_after_sign_in_whatever_backends_are_installed(
+    client, admin_issuer, settings, installed
+):
+    settings.AUTHENTICATION_BACKENDS = installed
+
+    response, _ = _sign_in(client, admin_issuer, ["superadmin"])
+
+    assert response.status_code == 302
+    assert client.get(reverse("admin:index")).status_code == 200
+
+
+def test_an_admin_with_no_backend_that_can_load_people_says_so(client, admin_issuer, settings):
+    """Refused at the callback with the reason, rather than a redirect loop
+    that names nothing."""
+    settings.AUTHENTICATION_BACKENDS = ["djangoproject.nowhere.NoBackend"]
+
+    with pytest.raises(ImproperlyConfigured, match="AUTHENTICATION_BACKENDS"):
+        _sign_in(client, admin_issuer, ["superadmin"])
