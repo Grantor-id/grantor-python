@@ -37,12 +37,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
 from django.core import signing
-from django.core.exceptions import ImproperlyConfigured, PermissionDenied
+from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured, PermissionDenied
 from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed, HttpResponseRedirect
 from django.urls import path, reverse
 from grantor import GrantorClient, GrantorError, ProtocolError, TokenError, parse_redirect_error
 
-from . import conf, transaction
+from . import backends, conf, transaction
 from .views import relative_path_only
 
 __all__ = ["GrantorAdminSite", "user_for_claims", "admin_client", "BREAK_GLASS_SETTING"]
@@ -106,7 +106,8 @@ def user_for_claims(claims: dict[str, Any]) -> Any:
 
     User = get_user_model()
     username_field = getattr(User, "USERNAME_FIELD", "username")
-    user = User._default_manager.filter(**{username_field: claims["sub"]}).first()
+    sub = str(claims["sub"])
+    user = _find(claims, sub, username_field, link=holds_it)
 
     if user is not None and user.has_usable_password():
         # Every account this admin creates has no usable password — that is
@@ -127,11 +128,9 @@ def user_for_claims(claims: dict[str, Any]) -> Any:
         # whether or not its flags say otherwise.
         if not holds_it:
             _refuse(claims, required_role)
-        user = User(**{username_field: claims["sub"], "email": claims.get("email", "")})
-        # No password path exists on this side, so there is nothing to guess.
-        user.set_unusable_password()
+        user = _new_admin_user(claims, sub, username_field)
 
-    if claims.get("email"):
+    if claims.get("email") and not _email_is_identity(username_field):
         user.email = claims["email"]
     user.is_active = True
     user.is_staff = holds_it
@@ -143,6 +142,104 @@ def user_for_claims(claims: dict[str, Any]) -> Any:
         # turned away: never creating and never updating are different
         # rules, and only the first one is right.
         _refuse(claims, required_role)
+    return user
+
+
+def _subject_on_this_model() -> tuple[bool, bool]:
+    """Whether ``GRANTOR_SUBJECT_FIELD`` names a real field, and whether it
+    lives on the user model itself.
+
+    The admin predates the setting being honoured here, and adopters whose
+    username *is* the ``sub`` never had to set it, so its default may name a
+    field their model does not have. That is not an error for them; it means
+    the username lookup below is the only one that applies.
+    """
+    related, field = conf.subject_field()
+    model = get_user_model()
+    try:
+        if related:
+            model = model._meta.get_field(related).related_model
+        model._meta.get_field(field)
+    except FieldDoesNotExist:
+        return False, False
+    return True, related is None
+
+
+def _find(claims: dict[str, Any], sub: str, username_field: str, *, link: bool) -> Any | None:
+    """The same person the session sign-in would find, or ``None``.
+
+    In the order :class:`~grantor_django.backends.GrantorBackend` uses, so
+    the two doors cannot disagree about who somebody is (AUTH-326):
+
+    1. the row ``GRANTOR_SUBJECT_FIELD`` links to this ``sub``;
+    2. a row whose username is the ``sub``, which is how this admin has
+       always created people, so every row it made before keeps working;
+    3. the one-shot verified-email bootstrap, only when ``link`` is true.
+       The caller passes whether the role is held: a person being turned
+       away leaves no trace, and writing their ``sub`` onto a row is one.
+    """
+    resolvable, _ = _subject_on_this_model()
+    if resolvable:
+        user = backends.find_by_subject(sub)
+        if user is not None:
+            return user
+    User = get_user_model()
+    user = User._default_manager.filter(**{username_field: sub}).first()
+    if user is not None:
+        return user
+    if resolvable and link:
+        return backends.link_by_verified_email(claims, sub)
+    return None
+
+
+def _email_is_identity(username_field: str) -> bool:
+    """Whether the email column says who somebody *is* here.
+
+    Then it is never rewritten from a claim: the issuer's address for this
+    person may differ in case or entirely, and the row it would collide with
+    is somebody else's account.
+    """
+    if username_field == "email":
+        return True
+    try:
+        return bool(get_user_model()._meta.get_field("email").unique)
+    except FieldDoesNotExist:
+        return False
+
+
+def _new_admin_user(claims: dict[str, Any], sub: str, username_field: str) -> Any:
+    """A row for somebody with the role whom nothing here knows yet.
+
+    Where the subject field lives on the user model, the row carries the
+    ``sub`` there and its username follows the session sign-in's
+    ``create_user``: the email, else the ``sub``. Behind a relation the
+    related row is the project's to create, so the username stays the
+    ``sub``, as it always was.
+
+    A username somebody already holds is refused rather than inserted. It is
+    a different person, or the same one whose link could not be proven, and
+    neither is this sign-in's to decide.
+    """
+    User = get_user_model()
+    resolvable, on_user = _subject_on_this_model()
+    email = claims.get("email") or ""
+    username = (email or sub) if resolvable and on_user else sub
+    if User._default_manager.filter(**{username_field: username}).exists():
+        logger.warning(
+            "grantor admin: refused sub %s — an account not linked to it already "
+            "holds that username",
+            sub,
+        )
+        raise PermissionDenied("an account not linked to this identity already exists")
+    fields: dict[str, Any] = {username_field: username}
+    if username_field != "email":
+        fields["email"] = email
+    user = User(**fields)
+    if resolvable and on_user:
+        _, field = conf.subject_field()
+        setattr(user, field, sub)
+    # No password path exists on this side, so there is nothing to guess.
+    user.set_unusable_password()
     return user
 
 

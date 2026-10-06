@@ -6,6 +6,32 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
+## Unreleased
+
+### Fixed
+
+- **The admin found people by username instead of by their subject.**
+  `GrantorAdminSite` looked a person up with `USERNAME_FIELD == sub`, while
+  the session sign-in uses `GRANTOR_SUBJECT_FIELD` and the verified-email
+  bootstrap. A project whose username is anything other than the `sub`
+  found nobody, so the admin built a second row for a person who already
+  had one; where the username is a unique email, that insert failed and
+  every admin sign-in answered 500. The admin now resolves people the way
+  `GrantorBackend` does: the subject field first, then a username equal
+  to the `sub` (so every row the admin made before keeps working), then
+  the one-shot verified-email link, for a holder of the role only
+  (AUTH-326).
+- **A new admin row never takes a username somebody already holds.** It is
+  refused with a 403 and a log line rather than inserted.
+- **The admin no longer rewrites an email that is the username** (or is
+  unique) from the issuer's claim. Elsewhere it still keeps the email in
+  step with the issuer.
+- A person new to the admin gets the `sub` in the subject field when that
+  field lives on the user model, and the username the session sign-in's
+  `create_user` would give them (the email, else the `sub`). Where the
+  subject lives behind a relation, the username stays the `sub`, as
+  before.
+
 ## 0.1.5 · 2026-09-28
 
 ### Changed
