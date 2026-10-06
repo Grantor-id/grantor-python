@@ -6,7 +6,12 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
-## Unreleased
+## 0.1.7 · 2026-10-06
+
+### Changed
+
+- `grantor-django` requires `grantor>=0.1.7`. The core itself is unchanged;
+  it moves in lockstep.
 
 ### Fixed
 
