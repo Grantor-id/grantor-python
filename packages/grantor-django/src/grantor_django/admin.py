@@ -33,7 +33,7 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.admin import AdminSite
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, load_backend
 from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
 from django.core import signing
@@ -241,6 +241,35 @@ def _new_admin_user(claims: dict[str, Any], sub: str, username_field: str) -> An
     # No password path exists on this side, so there is nothing to guess.
     user.set_unusable_password()
     return user
+
+
+def _session_backend(user: Any) -> str:
+    """The installed backend the session will be read back through.
+
+    Django stores this path in the session and, on every later request,
+    loads the user through it, **but only if it is still listed in
+    ``AUTHENTICATION_BACKENDS``**. Naming ``ModelBackend`` here, as this
+    callback used to, made a project that followed this module's own advice
+    and left ``ModelBackend`` out read every admin session back as
+    anonymous: the admin sent the person to sign in, the issuer signed them
+    straight back, and the browser gave up on "too many redirects"
+    (AUTH-330).
+
+    So: the first installed backend that can load this person again.
+    """
+    for dotted in settings.AUTHENTICATION_BACKENDS:
+        try:
+            backend = load_backend(dotted)
+        except ImportError:
+            continue
+        if backend.get_user(user.pk) is not None:
+            return dotted
+    raise ImproperlyConfigured(
+        "No backend in AUTHENTICATION_BACKENDS can load the admin's users back "
+        "from the session. Install grantor_django.backends.GrantorBackend (or "
+        "any backend whose get_user finds them); without one, every admin "
+        "sign-in reads as anonymous on the next request."
+    )
 
 
 def _refuse(claims: dict[str, Any], required_role: str) -> None:
@@ -453,7 +482,7 @@ class GrantorAdminSite(AdminSite):
             raise PermissionDenied(f"the ID token was rejected: {exc.reason}") from exc
 
         user = user_for_claims(claims)
-        django_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        django_login(request, user, backend=_session_backend(user))
         request.session[ADMIN_SESSION_KEY] = VIA_GRANTOR
 
         response = HttpResponseRedirect(txn.next_url or reverse(f"{self.name}:index"))

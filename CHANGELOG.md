@@ -6,6 +6,20 @@ after a release is a list of commits.
 Both packages move in lockstep through `0.x` and share one entry per
 release; they decouple at `1.0.0`.
 
+## Unreleased
+
+### Fixed
+
+- **The admin logged people in under `ModelBackend`, installed or not.**
+  Django reads a session back only through a backend still listed in
+  `AUTHENTICATION_BACKENDS`, and this module's own advice is to leave
+  `ModelBackend` out. A project that followed it signed in at the issuer,
+  came back to an admin that read the session as anonymous, was sent to
+  sign in again, and ended on "too many redirects". The callback now logs
+  the person in under the first installed backend that can load them
+  again, and raises `ImproperlyConfigured` with the reason when none can
+  (AUTH-330).
+
 ## 0.1.6 · 2026-10-05
 
 ### Changed
